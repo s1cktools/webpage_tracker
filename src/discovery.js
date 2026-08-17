@@ -149,7 +149,9 @@ async function discoverSite(siteUrl, onLog = () => {}) {
 
     for (const [index, result] of results.entries()) {
       if (result.status !== "fulfilled") {
-        onLog("warn", `sitemap ${batch[index]}: ${result.reason.message}`);
+        const message = `sitemap ${batch[index]}: ${result.reason.message}`;
+        const level = /\b(404|410)\b/.test(result.reason.message) ? "warn" : "error";
+        onLog(level, message);
         continue;
       }
       for (const url of result.value.pageUrls) {

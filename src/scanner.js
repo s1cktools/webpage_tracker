@@ -39,16 +39,26 @@ async function scanSite(siteOrId) {
   scanning.add(site.id);
   const startedAt = Date.now();
   try {
-    const warnings = [];
+    const issues = [];
+    let baselineBlocked = false;
     const urls = await discoverSite(site.url, (level, message) => {
-      if (level === "warn") warnings.push(message);
-      else addLog(site.id, level, message);
+      if (level === "warn" || level === "error") {
+        issues.push(message);
+        if (level === "error") baselineBlocked = true;
+      } else {
+        addLog(site.id, level, message);
+      }
     });
     const inserted = addDiscoveredUrls(site.id, urls, !site.baselined);
 
-    if (warnings.length) {
-      const suffix = warnings.length > 1 ? ` · ${warnings.length} failures` : "";
-      logOccasionally(site.id, "warning", "warn", `${warnings[0]}${suffix}`);
+    if (issues.length) {
+      const suffix = issues.length > 1 ? ` · ${issues.length} failures` : "";
+      logOccasionally(
+        site.id,
+        "warning",
+        baselineBlocked ? "error" : "warn",
+        `${issues[0]}${suffix}`
+      );
     }
 
     if (site.baselined) {
@@ -57,6 +67,10 @@ async function scanSite(siteOrId) {
         addLog(site.id, "new", `${inserted.length} new URL${inserted.length === 1 ? "" : "s"}`);
       }
     } else {
+      if (baselineBlocked) {
+        statements.markScanError.run("Baseline incomplete; retrying without alerts.", site.id);
+        return;
+      }
       statements.markBaselined.run(site.id);
       addLog(site.id, "info", `baseline complete · ${urls.length} URLs`);
     }
