@@ -1,4 +1,4 @@
-const { addDiscoveredUrls, getSetting, statements } = require("./db");
+const { addDiscoveredUrls, addLog, getSetting, statements } = require("./db");
 const { discoverSite } = require("./discovery");
 const { buildDiscordPayload } = require("./discord");
 
@@ -27,16 +27,32 @@ async function scanSite(siteOrId) {
   if (!site || scanning.has(site.id)) return;
 
   scanning.add(site.id);
+  const startedAt = Date.now();
   try {
-    const urls = await discoverSite(site.url);
+    const urls = await discoverSite(site.url, (level, message) => {
+      addLog(site.id, level, message);
+    });
     const inserted = addDiscoveredUrls(site.id, urls, !site.baselined);
 
-    if (site.baselined) await sendDiscordAlert(site, inserted);
-    else statements.markBaselined.run(site.id);
+    if (site.baselined) {
+      await sendDiscordAlert(site, inserted);
+      if (inserted.length) {
+        addLog(site.id, "new", `${inserted.length} new URL${inserted.length === 1 ? "" : "s"}`);
+      }
+    } else {
+      statements.markBaselined.run(site.id);
+      addLog(site.id, "info", `baseline complete · ${urls.length} URLs`);
+    }
 
     statements.markScanSuccess.run(site.id);
+    addLog(
+      site.id,
+      "info",
+      `scan complete · ${urls.length} URLs · ${Date.now() - startedAt}ms`
+    );
   } catch (error) {
     statements.markScanError.run(String(error.message).slice(0, 500), site.id);
+    addLog(site.id, "error", error.message);
     console.error(`[scanner] ${site.hostname}:`, error.message);
   } finally {
     scanning.delete(site.id);

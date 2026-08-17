@@ -16,6 +16,8 @@
         <i>/</i>
         discord <%= webhookConfigured ? "on" : "off" %>
         <i>/</i>
+        <a href="/logs">logs</a>
+        <i>/</i>
         <a href="/preview">preview</a>
       </div>
     </header>
@@ -71,6 +73,7 @@
               <span><%= site.url_count %></span>
               <time datetime="<%= site.last_scanned_at || '' %>"><%= site.last_scanned_at ? site.last_scanned_at.replace("T", " ").replace(".000Z", "") : "pending" %></time>
               <div class="actions">
+                <a href="/logs?site=<%= site.id %>">logs</a>
                 <form method="post" action="/sites/<%= site.id %>/scan">
                   <button title="Scan now">scan</button>
                 </form>

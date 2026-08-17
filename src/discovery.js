@@ -3,8 +3,9 @@ const net = require("node:net");
 
 const USER_AGENT = "PagePulse/1.0 (+website change monitor)";
 const REQUEST_TIMEOUT_MS = 10_000;
-const MAX_SITEMAPS = 20;
-const MAX_URLS = 10_000;
+const MAX_SITEMAPS = 500;
+const MAX_URLS = 250_000;
+const SITEMAP_CONCURRENCY = 50;
 
 function normalizeSiteUrl(value) {
   const raw = String(value || "").trim();
@@ -120,29 +121,52 @@ async function discoverSitemapLocations(siteUrl) {
   return locations;
 }
 
-async function discoverSite(siteUrl) {
+async function discoverSite(siteUrl, onLog = () => {}) {
   const site = new URL(siteUrl);
   const found = new Set([site.toString()]);
   const sitemapQueue = [...(await discoverSitemapLocations(siteUrl))];
   const visitedSitemaps = new Set();
 
-  while (
-    sitemapQueue.length &&
-    visitedSitemaps.size < MAX_SITEMAPS &&
-    found.size < MAX_URLS
-  ) {
-    const sitemapUrl = sitemapQueue.shift();
-    if (visitedSitemaps.has(sitemapUrl)) continue;
-    visitedSitemaps.add(sitemapUrl);
-
-    try {
-      const { text } = await fetchText(sitemapUrl, "application/xml,text/xml");
-      const entries = extractSitemapEntries(text, sitemapUrl, site.hostname);
-      entries.pageUrls.forEach((url) => found.add(url));
-      entries.sitemapUrls.forEach((url) => sitemapQueue.push(url));
-    } catch {
-      // Sites frequently omit the conventional sitemap path.
+  while (sitemapQueue.length && visitedSitemaps.size < MAX_SITEMAPS) {
+    const batch = [];
+    while (
+      sitemapQueue.length &&
+      batch.length < SITEMAP_CONCURRENCY &&
+      visitedSitemaps.size < MAX_SITEMAPS
+    ) {
+      const sitemapUrl = sitemapQueue.shift();
+      if (visitedSitemaps.has(sitemapUrl)) continue;
+      visitedSitemaps.add(sitemapUrl);
+      batch.push(sitemapUrl);
     }
+
+    const results = await Promise.allSettled(
+      batch.map(async (sitemapUrl) => {
+        const { text } = await fetchText(sitemapUrl, "application/xml,text/xml");
+        return extractSitemapEntries(text, sitemapUrl, site.hostname);
+      })
+    );
+
+    for (const [index, result] of results.entries()) {
+      if (result.status !== "fulfilled") {
+        onLog("warn", `sitemap ${batch[index]}: ${result.reason.message}`);
+        continue;
+      }
+      for (const url of result.value.pageUrls) {
+        if (found.size >= MAX_URLS) break;
+        found.add(url);
+      }
+      for (const sitemapUrl of result.value.sitemapUrls) {
+        if (!visitedSitemaps.has(sitemapUrl)) sitemapQueue.push(sitemapUrl);
+      }
+    }
+  }
+
+  if (visitedSitemaps.size >= MAX_SITEMAPS && sitemapQueue.length) {
+    onLog("warn", `sitemap limit reached (${MAX_SITEMAPS})`);
+  }
+  if (found.size >= MAX_URLS) {
+    onLog("warn", `URL limit reached (${MAX_URLS})`);
   }
 
   const pagesToInspect = [siteUrl];
@@ -154,8 +178,11 @@ async function discoverSite(siteUrl) {
   const pageResults = await Promise.allSettled(
     pagesToInspect.map((url) => fetchText(url, "text/html"))
   );
-  for (const result of pageResults) {
-    if (result.status !== "fulfilled") continue;
+  for (const [index, result] of pageResults.entries()) {
+    if (result.status !== "fulfilled") {
+      onLog("warn", `page ${pagesToInspect[index]}: ${result.reason.message}`);
+      continue;
+    }
     extractLinks(result.value.text, result.value.finalUrl, site.hostname)
       .forEach((url) => found.add(url));
   }

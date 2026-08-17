@@ -49,6 +49,17 @@ app.get("/preview", (request, response) => {
   response.render("preview");
 });
 
+app.get("/logs", (request, response) => {
+  const sites = statements.listSites.all();
+  const requestedSiteId = Number(request.query.site);
+  const selectedSite = sites.find((site) => site.id === requestedSiteId) || null;
+  const logs = selectedSite
+    ? statements.siteLogs.all(selectedSite.id, 250)
+    : statements.globalLogs.all(250);
+
+  response.render("logs", { sites, selectedSite, logs });
+});
+
 app.post("/sites", (request, response) => {
   try {
     const url = normalizeSiteUrl(request.body.url);

@@ -248,9 +248,10 @@ button:hover { color: var(--red); }
 
 .actions { display: flex; gap: 10px; }
 .actions form { display: inline; }
-.actions button { font-size: 10px; }
-.actions button::before { content: "["; color: var(--dim); }
-.actions button::after { content: "]"; color: var(--dim); }
+.actions button, .actions a { color: var(--muted); font-size: 10px; text-decoration: none; }
+.actions button::before, .actions a::before { content: "["; color: var(--dim); }
+.actions button::after, .actions a::after { content: "]"; color: var(--dim); }
+.actions a:hover { color: var(--red); }
 .actions .remove:hover { color: var(--red); }
 
 .sidebar { min-width: 0; }

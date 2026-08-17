@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta http-equiv="refresh" content="5">
+    <title>Logs — PagePulse</title>
+    <link rel="stylesheet" href="/logs.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/">← dashboard</a>
+      <span>auto-refresh 5s</span>
+    </header>
+
+    <main>
+      <section class="heading">
+        <div>
+          <span class="kicker">RUNTIME</span>
+          <h1><%= selectedSite ? (selectedSite.nickname || selectedSite.hostname) : "global" %>.log</h1>
+        </div>
+        <span><%= logs.length %> entries</span>
+      </section>
+
+      <nav>
+        <a class="<%= selectedSite ? '' : 'active' %>" href="/logs">global</a>
+        <% sites.forEach((site) => { %>
+          <a class="<%= selectedSite?.id === site.id ? 'active' : '' %>" href="/logs?site=<%= site.id %>"><%= site.nickname || site.hostname %></a>
+        <% }) %>
+      </nav>
+
+      <section class="terminal">
+        <header>
+          <span>time</span>
+          <span>level</span>
+          <span>target</span>
+          <span>message</span>
+        </header>
+
+        <% if (!logs.length) { %>
+          <div class="empty">no log entries</div>
+        <% } %>
+
+        <% logs.forEach((log) => { %>
+          <article>
+            <time datetime="<%= log.created_at %>"><%= log.created_at %></time>
+            <span class="level <%= log.level %>"><%= log.level %></span>
+            <a href="/logs?site=<%= log.site_id %>"><%= log.nickname %></a>
+            <p><%= log.message %></p>
+          </article>
+        <% }) %>
+      </section>
+    </main>
+  </body>
+</html>

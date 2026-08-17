@@ -36,8 +36,19 @@ db.exec(`
     UNIQUE(site_id, url)
   );
 
+  CREATE TABLE IF NOT EXISTS scan_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS discovered_urls_site_seen
     ON discovered_urls(site_id, first_seen_at DESC);
+
+  CREATE INDEX IF NOT EXISTS scan_logs_site_created
+    ON scan_logs(site_id, id DESC);
 `);
 
 const urlColumns = db.prepare("PRAGMA table_info(discovered_urls)").all();
@@ -87,6 +98,28 @@ const statements = {
     ORDER BY discovered_urls.id DESC
     LIMIT ?
   `),
+  insertLog: db.prepare(`
+    INSERT INTO scan_logs (site_id, level, message) VALUES (?, ?, ?)
+  `),
+  trimLogs: db.prepare(`
+    DELETE FROM scan_logs
+    WHERE id NOT IN (SELECT id FROM scan_logs ORDER BY id DESC LIMIT 1000)
+  `),
+  globalLogs: db.prepare(`
+    SELECT scan_logs.*, sites.hostname, COALESCE(sites.nickname, sites.hostname) AS nickname
+    FROM scan_logs
+    JOIN sites ON sites.id = scan_logs.site_id
+    ORDER BY scan_logs.id DESC
+    LIMIT ?
+  `),
+  siteLogs: db.prepare(`
+    SELECT scan_logs.*, sites.hostname, COALESCE(sites.nickname, sites.hostname) AS nickname
+    FROM scan_logs
+    JOIN sites ON sites.id = scan_logs.site_id
+    WHERE scan_logs.site_id = ?
+    ORDER BY scan_logs.id DESC
+    LIMIT ?
+  `),
 };
 
 function getSetting(key) {
@@ -110,4 +143,9 @@ function addDiscoveredUrls(siteId, urls, isBaseline = false) {
   return inserted;
 }
 
-module.exports = { db, statements, getSetting, addDiscoveredUrls };
+function addLog(siteId, level, message) {
+  statements.insertLog.run(siteId, level, String(message).slice(0, 500));
+  statements.trimLogs.run();
+}
+
+module.exports = { db, statements, getSetting, addDiscoveredUrls, addLog };
