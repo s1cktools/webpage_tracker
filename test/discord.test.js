@@ -18,7 +18,8 @@ test("builds a clean single-page embed using the site nickname", () => {
   assert.equal(payload.embeds[0].title, "New OpenAI Page Detected");
   assert.equal(payload.embeds[0].url, "https://openai.com/research/gpt-6");
   assert.match(payload.embeds[0].description, /research\/gpt-6/);
-  assert.equal(payload.embeds[0].footer.text, "PagePulse • openai.com");
+  assert.equal(payload.username, "the watcher");
+  assert.equal(payload.embeds[0].footer.text, "openai.com");
 });
 
 test("builds a capped multi-page embed", () => {

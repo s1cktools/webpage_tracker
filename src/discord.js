@@ -25,7 +25,7 @@ function buildDiscordPayload(site, urls, now = new Date()) {
   }
 
   return {
-    username: "PagePulse",
+    username: "the watcher",
     allowed_mentions: { parse: [] },
     embeds: [
       {
@@ -35,7 +35,7 @@ function buildDiscordPayload(site, urls, now = new Date()) {
           : `${urls.length} New ${nickname} Pages Detected`,
         url: single ? urls[0] : undefined,
         description: lines.join("\n"),
-        footer: { text: `PagePulse • ${site.hostname}` },
+        footer: { text: site.hostname },
         timestamp: now.toISOString(),
       },
     ],

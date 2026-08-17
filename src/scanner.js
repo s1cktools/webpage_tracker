@@ -3,7 +3,17 @@ const { discoverSite } = require("./discovery");
 const { buildDiscordPayload } = require("./discord");
 
 const POLL_INTERVAL_MS = 5_000;
+const LOG_INTERVAL_MS = 5 * 60_000;
 const scanning = new Set();
+const lastLogAt = new Map();
+
+function logOccasionally(siteId, type, level, message) {
+  const key = `${siteId}:${type}`;
+  const now = Date.now();
+  if (now - (lastLogAt.get(key) || 0) < LOG_INTERVAL_MS) return;
+  lastLogAt.set(key, now);
+  addLog(siteId, level, message);
+}
 
 async function sendDiscordAlert(site, urls) {
   const webhookUrl = getSetting("discord_webhook_url");
@@ -29,10 +39,17 @@ async function scanSite(siteOrId) {
   scanning.add(site.id);
   const startedAt = Date.now();
   try {
+    const warnings = [];
     const urls = await discoverSite(site.url, (level, message) => {
-      addLog(site.id, level, message);
+      if (level === "warn") warnings.push(message);
+      else addLog(site.id, level, message);
     });
     const inserted = addDiscoveredUrls(site.id, urls, !site.baselined);
+
+    if (warnings.length) {
+      const suffix = warnings.length > 1 ? ` · ${warnings.length} failures` : "";
+      logOccasionally(site.id, "warning", "warn", `${warnings[0]}${suffix}`);
+    }
 
     if (site.baselined) {
       await sendDiscordAlert(site, inserted);
@@ -45,14 +62,15 @@ async function scanSite(siteOrId) {
     }
 
     statements.markScanSuccess.run(site.id);
-    addLog(
+    logOccasionally(
       site.id,
+      "heartbeat",
       "info",
       `scan complete · ${urls.length} URLs · ${Date.now() - startedAt}ms`
     );
   } catch (error) {
     statements.markScanError.run(String(error.message).slice(0, 500), site.id);
-    addLog(site.id, "error", error.message);
+    logOccasionally(site.id, "error", "error", error.message);
     console.error(`[scanner] ${site.hostname}:`, error.message);
   } finally {
     scanning.delete(site.id);

@@ -54,8 +54,8 @@ app.get("/logs", (request, response) => {
   const requestedSiteId = Number(request.query.site);
   const selectedSite = sites.find((site) => site.id === requestedSiteId) || null;
   const logs = selectedSite
-    ? statements.siteLogs.all(selectedSite.id, 250)
-    : statements.globalLogs.all(250);
+    ? statements.siteLogs.all(selectedSite.id, 100)
+    : statements.globalLogs.all(100);
 
   response.render("logs", { sites, selectedSite, logs });
 });

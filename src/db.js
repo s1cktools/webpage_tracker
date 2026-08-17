@@ -103,7 +103,7 @@ const statements = {
   `),
   trimLogs: db.prepare(`
     DELETE FROM scan_logs
-    WHERE id NOT IN (SELECT id FROM scan_logs ORDER BY id DESC LIMIT 1000)
+    WHERE id NOT IN (SELECT id FROM scan_logs ORDER BY id DESC LIMIT 200)
   `),
   globalLogs: db.prepare(`
     SELECT scan_logs.*, sites.hostname, COALESCE(sites.nickname, sites.hostname) AS nickname
