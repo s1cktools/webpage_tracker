@@ -1,11 +1,18 @@
-const { addDiscoveredUrls, addLog, getSetting, statements } = require("./db");
-const { discoverSite } = require("./discovery");
+const {
+  addDiscoveredUrls,
+  addLog,
+  getSetting,
+  pruneDiscoveredUrls,
+  statements,
+} = require("./db");
+const { discoverSite, excludeTranslatedUrls, isTranslatedUrl } = require("./discovery");
 const { buildDiscordPayload } = require("./discord");
 
 const POLL_INTERVAL_MS = 5_000;
 const LOG_INTERVAL_MS = 5 * 60_000;
 const scanning = new Set();
 const lastLogAt = new Map();
+const localePrunedSites = new Set();
 
 function logOccasionally(siteId, type, level, message) {
   const key = `${siteId}:${type}`;
@@ -41,7 +48,7 @@ async function scanSite(siteOrId) {
   try {
     const issues = [];
     let baselineBlocked = false;
-    const urls = await discoverSite(site.url, (level, message) => {
+    const discoveredUrls = await discoverSite(site.url, (level, message) => {
       if (level === "warn" || level === "error") {
         issues.push(message);
         if (level === "error") baselineBlocked = true;
@@ -49,6 +56,16 @@ async function scanSite(siteOrId) {
         addLog(site.id, level, message);
       }
     });
+    const urls = site.ignore_locales
+      ? excludeTranslatedUrls(discoveredUrls)
+      : discoveredUrls;
+
+    if (site.ignore_locales && !localePrunedSites.has(site.id)) {
+      const removed = pruneDiscoveredUrls(site.id, isTranslatedUrl);
+      localePrunedSites.add(site.id);
+      if (removed) addLog(site.id, "info", `removed ${removed} translated URLs`);
+    }
+
     const inserted = addDiscoveredUrls(site.id, urls, !site.baselined);
 
     if (issues.length) {

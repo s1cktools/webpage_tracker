@@ -1,8 +1,8 @@
 const crypto = require("node:crypto");
 const path = require("node:path");
 const express = require("express");
-const { getSetting, statements } = require("./db");
-const { normalizeSiteUrl } = require("./discovery");
+const { getSetting, pruneDiscoveredUrls, statements } = require("./db");
+const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { POLL_INTERVAL_MS, scanSite, startScanner } = require("./scanner");
 
 const app = express();
@@ -82,6 +82,22 @@ app.post("/sites", (request, response) => {
 app.post("/sites/:id/toggle", (request, response) => {
   statements.toggleSite.run(Number(request.params.id));
   response.redirect("/?message=Site status updated.");
+});
+
+app.post("/sites/:id/locales", (request, response) => {
+  const siteId = Number(request.params.id);
+  statements.toggleLocales.run(siteId);
+  const site = statements.getSite.get(siteId);
+  const removed = site?.ignore_locales
+    ? pruneDiscoveredUrls(siteId, isTranslatedUrl)
+    : 0;
+  response.redirect(
+    `/?message=${encodeURIComponent(
+      site?.ignore_locales
+        ? `English-only enabled. Removed ${removed} translated URLs.`
+        : "All languages enabled."
+    )}`
+  );
 });
 
 app.post("/sites/:id/scan", (request, response) => {

@@ -6,6 +6,10 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_SITEMAPS = 500;
 const MAX_URLS = 250_000;
 const SITEMAP_CONCURRENCY = 50;
+const TRANSLATED_PATH_PREFIXES = new Set([
+  "ar", "de", "el", "es", "fi", "fr", "id", "it", "ja",
+  "ko", "nl", "pl", "pt", "ru", "tr", "uk", "vi", "zh",
+]);
 
 function normalizeSiteUrl(value) {
   const raw = String(value || "").trim();
@@ -75,6 +79,16 @@ function normalizeDiscoveredUrl(rawUrl, baseUrl, rootHostname) {
   } catch {
     return null;
   }
+}
+
+function isTranslatedUrl(rawUrl) {
+  const firstSegment = new URL(rawUrl).pathname.split("/").filter(Boolean)[0] || "";
+  const language = firstSegment.toLowerCase().split("-")[0];
+  return TRANSLATED_PATH_PREFIXES.has(language);
+}
+
+function excludeTranslatedUrls(urls) {
+  return urls.filter((url) => !isTranslatedUrl(url));
 }
 
 function extractLinks(html, pageUrl, rootHostname) {
@@ -194,8 +208,10 @@ async function discoverSite(siteUrl, onLog = () => {}) {
 
 module.exports = {
   discoverSite,
+  excludeTranslatedUrls,
   extractLinks,
   extractSitemapEntries,
   normalizeDiscoveredUrl,
   normalizeSiteUrl,
+  isTranslatedUrl,
 };

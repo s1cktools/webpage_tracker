@@ -20,6 +20,7 @@ db.exec(`
     url TEXT NOT NULL UNIQUE,
     hostname TEXT NOT NULL,
     nickname TEXT,
+    ignore_locales INTEGER NOT NULL DEFAULT 0,
     enabled INTEGER NOT NULL DEFAULT 1,
     baselined INTEGER NOT NULL DEFAULT 0,
     last_scanned_at TEXT,
@@ -60,6 +61,14 @@ const siteColumns = db.prepare("PRAGMA table_info(sites)").all();
 if (!siteColumns.some((column) => column.name === "nickname")) {
   db.exec("ALTER TABLE sites ADD COLUMN nickname TEXT");
 }
+if (!siteColumns.some((column) => column.name === "ignore_locales")) {
+  db.exec("ALTER TABLE sites ADD COLUMN ignore_locales INTEGER NOT NULL DEFAULT 0");
+  db.exec(`
+    UPDATE sites
+    SET ignore_locales = 1
+    WHERE hostname IN ('solana.com', 'www.solana.com', 'claude.com', 'www.claude.com')
+  `);
+}
 
 const statements = {
   getSetting: db.prepare("SELECT value FROM settings WHERE key = ?"),
@@ -78,6 +87,11 @@ const statements = {
   toggleSite: db.prepare(`
     UPDATE sites SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id = ?
   `),
+  toggleLocales: db.prepare(`
+    UPDATE sites
+    SET ignore_locales = CASE ignore_locales WHEN 1 THEN 0 ELSE 1 END
+    WHERE id = ?
+  `),
   deleteSite: db.prepare("DELETE FROM sites WHERE id = ?"),
   activeSites: db.prepare("SELECT * FROM sites WHERE enabled = 1 ORDER BY id"),
   markBaselined: db.prepare("UPDATE sites SET baselined = 1 WHERE id = ?"),
@@ -90,6 +104,8 @@ const statements = {
   insertUrl: db.prepare(`
     INSERT OR IGNORE INTO discovered_urls (site_id, url, is_baseline) VALUES (?, ?, ?)
   `),
+  siteUrls: db.prepare("SELECT url FROM discovered_urls WHERE site_id = ?"),
+  deleteUrl: db.prepare("DELETE FROM discovered_urls WHERE site_id = ? AND url = ?"),
   recentUrls: db.prepare(`
     SELECT discovered_urls.url, discovered_urls.first_seen_at, sites.hostname
     FROM discovered_urls
@@ -148,4 +164,25 @@ function addLog(siteId, level, message) {
   statements.trimLogs.run();
 }
 
-module.exports = { db, statements, getSetting, addDiscoveredUrls, addLog };
+function pruneDiscoveredUrls(siteId, shouldDelete) {
+  const urls = statements.siteUrls.all(siteId).map((row) => row.url);
+  const removed = urls.filter(shouldDelete);
+  db.exec("BEGIN");
+  try {
+    for (const url of removed) statements.deleteUrl.run(siteId, url);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return removed.length;
+}
+
+module.exports = {
+  db,
+  statements,
+  getSetting,
+  addDiscoveredUrls,
+  addLog,
+  pruneDiscoveredUrls,
+};

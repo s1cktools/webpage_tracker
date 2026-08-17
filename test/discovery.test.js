@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  excludeTranslatedUrls,
   extractLinks,
   extractSitemapEntries,
   normalizeDiscoveredUrl,
@@ -55,4 +56,20 @@ test("drops fragments and external URLs", () => {
     normalizeDiscoveredUrl("https://elsewhere.com", "https://example.com", "example.com"),
     null
   );
+});
+
+test("filters translated paths while keeping default English URLs", () => {
+  const urls = [
+    "https://solana.com/docs/core",
+    "https://solana.com/en/docs/core",
+    "https://solana.com/fr/docs/core",
+    "https://solana.com/pt-br/docs/core",
+    "https://solana.com/news/update",
+  ];
+
+  assert.deepEqual(excludeTranslatedUrls(urls), [
+    "https://solana.com/docs/core",
+    "https://solana.com/en/docs/core",
+    "https://solana.com/news/update",
+  ]);
 });
