@@ -37,6 +37,14 @@ added, modified, and removed UI strings and include a limited set of changed
 lines. The dashboard can pause the monitor, trigger a manual check, and display
 recent changes or endpoint errors.
 
+## Ansem coin monitoring
+
+The built-in Ansem monitor polls `https://ansem.io/api/coins` every second.
+Its first successful response is stored silently as a baseline. Each newly
+observed mint then triggers the configured Discord webhook and an `ansem_coin`
+stream event containing the complete contract address. Set
+`ANSEM_POLL_INTERVAL_MS` to override the interval (minimum 250ms).
+
 ## Event stream
 
 Set `EVENT_STREAM_TOKEN` to expose an authenticated Socket.IO namespace at
@@ -53,7 +61,7 @@ Binance discovery is broadcast as `tracker_event` in this minimal shape:
 ```
 
 The supported event types are `website_page`, `github_commit`,
-`github_repository`, and `binance_ui`. A data server can subscribe with:
+`github_repository`, `binance_ui`, and `ansem_coin`. A data server can subscribe with:
 
 ```js
 import { io } from "socket.io-client";

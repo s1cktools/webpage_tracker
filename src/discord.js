@@ -3,6 +3,7 @@ const GITHUB_PURPLE = 0x6e40c9;
 const BINANCE_GREEN = 0x2ebd85;
 const BINANCE_AMBER = 0xf0b90b;
 const BINANCE_RED = 0xef4444;
+const ANSEM_GOLD = 0xf5c542;
 const MAX_VISIBLE_URLS = 10;
 
 function displayUrl(rawUrl, siteHostname) {
@@ -150,7 +151,32 @@ function buildBinancePayload(events, scanDurationMs, now = new Date()) {
   };
 }
 
+function buildAnsemPayload(coins, scanDurationMs, now = new Date()) {
+  return {
+    username: "the watcher",
+    allowed_mentions: { parse: [] },
+    embeds: coins.slice(0, MAX_VISIBLE_URLS).map((coin) => ({
+      color: ANSEM_GOLD,
+      author: { name: "ansem.io" },
+      title: `${coin.name}${coin.ticker ? ` ($${coin.ticker})` : ""}`,
+      url: "https://ansem.io/",
+      description: [
+        "**Contract address**",
+        `\`${coin.mint}\``,
+        coin.creatorWallet ? `**Creator**\n\`${coin.creatorWallet}\`` : null,
+        coin.status ? `**Status:** ${coin.status}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      thumbnail: coin.imageUrl ? { url: coin.imageUrl } : undefined,
+      footer: { text: `NEW ANSEM COIN · API · ${scanDurationMs}ms` },
+      timestamp: now.toISOString(),
+    })),
+  };
+}
+
 module.exports = {
+  buildAnsemPayload,
   buildDiscordPayload,
   buildGitHubPayload,
   buildBinancePayload,

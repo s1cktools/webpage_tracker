@@ -99,6 +99,17 @@ db.exec(`
     detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS ansem_coins (
+    mint TEXT PRIMARY KEY,
+    slug TEXT,
+    name TEXT NOT NULL,
+    ticker TEXT,
+    creator_wallet TEXT,
+    created_at TEXT,
+    is_baseline INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS discovered_urls_site_seen
     ON discovered_urls(site_id, first_seen_at DESC);
 
@@ -312,6 +323,12 @@ const statements = {
   countBinanceChanges: db.prepare(`
     SELECT COUNT(*) AS count FROM binance_ui_changes
   `),
+  countAnsemCoins: db.prepare("SELECT COUNT(*) AS count FROM ansem_coins"),
+  insertAnsemCoin: db.prepare(`
+    INSERT OR IGNORE INTO ansem_coins
+      (mint, slug, name, ticker, creator_wallet, created_at, is_baseline)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `),
 };
 
 function getSetting(key) {
@@ -402,6 +419,30 @@ function addBinanceChanges(namespace, changes) {
   }
 }
 
+function addAnsemCoins(coins, isBaseline = false) {
+  const inserted = [];
+  db.exec("BEGIN");
+  try {
+    for (const coin of coins) {
+      const result = statements.insertAnsemCoin.run(
+        coin.mint,
+        coin.slug || null,
+        coin.name,
+        coin.ticker || null,
+        coin.creatorWallet || null,
+        coin.createdAt || null,
+        isBaseline ? 1 : 0
+      );
+      if (result.changes) inserted.push(coin);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return inserted;
+}
+
 module.exports = {
   db,
   statements,
@@ -412,4 +453,5 @@ module.exports = {
   addGithubItems,
   addGithubLog,
   addBinanceChanges,
+  addAnsemCoins,
 };

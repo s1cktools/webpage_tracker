@@ -3,6 +3,7 @@ const http = require("node:http");
 const path = require("node:path");
 const express = require("express");
 const { getSetting, pruneDiscoveredUrls, statements } = require("./db");
+const { startAnsemScanner } = require("./ansem-scanner");
 const {
   BINANCE_POLL_INTERVAL_MS,
   isBinanceEnabled,
@@ -250,4 +251,5 @@ httpServer.listen(port, "0.0.0.0", () => {
   startScanner();
   startGithubScanner();
   startBinanceScanner();
+  startAnsemScanner();
 });

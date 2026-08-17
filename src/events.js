@@ -75,7 +75,25 @@ function buildBinanceUiEvent(namespace, changes, detectedAt) {
   );
 }
 
+function buildAnsemCoinEvent(coin, detectedAt = new Date()) {
+  return createEvent(
+    "ansem_coin",
+    {
+      name: coin.name,
+      ticker: coin.ticker,
+      slug: coin.slug,
+      contract_address: coin.mint,
+      creator_wallet: coin.creatorWallet,
+      status: coin.status,
+      created_at: coin.createdAt,
+      url: "https://ansem.io/",
+    },
+    detectedAt
+  );
+}
+
 module.exports = {
+  buildAnsemCoinEvent,
   buildBinanceUiEvent,
   buildGithubEvent,
   buildWebsitePageEvent,

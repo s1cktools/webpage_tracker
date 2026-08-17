@@ -138,5 +138,20 @@ Every event has exactly four top-level fields:
 }
 ```
 
+### `ansem_coin`
+
+```json
+{
+  "name": "New Coin",
+  "ticker": "COIN",
+  "slug": "new-coin",
+  "contract_address": "SolanaMintAddress",
+  "creator_wallet": "CreatorWalletAddress",
+  "status": "on_curve",
+  "created_at": "2026-08-17T16:32:51.349Z",
+  "url": "https://ansem.io/"
+}
+```
+
 There is no replay. Events emitted while the data server is disconnected are
 not sent later.
