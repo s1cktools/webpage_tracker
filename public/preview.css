@@ -163,6 +163,26 @@ section {
   font-weight: 600;
 }
 
+.event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.event-meta span {
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: #383a40;
+  color: #b5bac1;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .03em;
+}
+
+.event-meta span:first-child { background: #3b1719; color: #ff7b7f; }
+
 .embed-link {
   color: #00a8fc;
   font-size: 13px;
@@ -199,7 +219,21 @@ section {
   font-weight: 500;
 }
 
-.url-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.url-list > a > span { min-width: 0; overflow: hidden; }
+.url-list strong,
+.url-list code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.url-list strong { color: #dbdee1; font-size: 12px; font-weight: 500; }
+.url-list code {
+  margin-top: 2px;
+  color: #00a8fc;
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 10px;
+}
 .url-list.compact a { padding: 3px 0; }
 
 .overflow {
