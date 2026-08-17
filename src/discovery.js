@@ -101,6 +101,34 @@ function extractLinks(html, pageUrl, rootHostname) {
   return urls;
 }
 
+function extractPageTitle(html) {
+  const $ = cheerio.load(html);
+  const candidates = [
+    $('meta[property="og:title"]').attr("content"),
+    $('meta[name="twitter:title"]').attr("content"),
+    $("title").first().text(),
+    $("h1").first().text(),
+  ];
+  const title = candidates.find((value) => String(value || "").trim());
+  return title ? String(title).replace(/\s+/g, " ").trim().slice(0, 200) : "";
+}
+
+async function fetchPageTitle(url) {
+  const response = await fetch(url, {
+    headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+    await response.body?.cancel();
+    return "";
+  }
+  return extractPageTitle(await response.text());
+}
+
 function extractSitemapEntries(xml, sitemapUrl, rootHostname) {
   const $ = cheerio.load(xml, { xmlMode: true });
   const sitemapUrls = [];
@@ -210,7 +238,9 @@ module.exports = {
   discoverSite,
   excludeTranslatedUrls,
   extractLinks,
+  extractPageTitle,
   extractSitemapEntries,
+  fetchPageTitle,
   normalizeDiscoveredUrl,
   normalizeSiteUrl,
   isTranslatedUrl,

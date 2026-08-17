@@ -33,3 +33,12 @@ test("builds a capped multi-page embed", () => {
   assert.match(payload.embeds[0].description, /\+2 more URLs/);
   assert.doesNotMatch(payload.embeds[0].description, /page-11/);
 });
+
+test("uses fetched titles for new page labels", () => {
+  const url = "https://openai.com/research/gpt-6";
+  const titles = new Map([[url, "Introducing GPT-6"]]);
+  const payload = buildDiscordPayload(site, [url], now, titles);
+
+  assert.equal(payload.embeds[0].title, "Introducing GPT-6");
+  assert.match(payload.embeds[0].description, /Introducing GPT-6/);
+});

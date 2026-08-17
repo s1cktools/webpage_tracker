@@ -11,12 +11,12 @@ function displayUrl(rawUrl, siteHostname) {
   return url.hostname === siteHostname ? path : `${url.hostname}${path}`;
 }
 
-function buildDiscordPayload(site, urls, now = new Date()) {
+function buildDiscordPayload(site, urls, now = new Date(), titles = new Map()) {
   const nickname = site.nickname || site.hostname;
   const single = urls.length === 1;
   const shown = urls.slice(0, MAX_VISIBLE_URLS);
   const lines = shown.map((url, index) => {
-    const label = markdownEscape(displayUrl(url, site.hostname));
+    const label = markdownEscape(titles.get(url) || displayUrl(url, site.hostname));
     return `**${String(index + 1).padStart(2, "0")}**  [${label}](<${url}>)`;
   });
 
@@ -31,7 +31,7 @@ function buildDiscordPayload(site, urls, now = new Date()) {
       {
         color: EMBED_RED,
         title: single
-          ? `New ${nickname} Page Detected`
+          ? titles.get(urls[0]) || `New ${nickname} Page Detected`
           : `${urls.length} New ${nickname} Pages Detected`,
         url: single ? urls[0] : undefined,
         description: lines.join("\n"),

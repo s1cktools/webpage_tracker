@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   excludeTranslatedUrls,
   extractLinks,
+  extractPageTitle,
   extractSitemapEntries,
   normalizeDiscoveredUrl,
   normalizeSiteUrl,
@@ -72,4 +73,18 @@ test("filters translated paths while keeping default English URLs", () => {
     "https://solana.com/en/docs/core",
     "https://solana.com/news/update",
   ]);
+});
+
+test("extracts a useful page title from metadata", () => {
+  const html = `
+    <html>
+      <head>
+        <title>Fallback title</title>
+        <meta property="og:title" content="  Service disruption on Claude services  ">
+      </head>
+      <body><h1>Heading</h1></body>
+    </html>
+  `;
+
+  assert.equal(extractPageTitle(html), "Service disruption on Claude services");
 });

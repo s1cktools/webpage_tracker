@@ -5,7 +5,12 @@ const {
   pruneDiscoveredUrls,
   statements,
 } = require("./db");
-const { discoverSite, excludeTranslatedUrls, isTranslatedUrl } = require("./discovery");
+const {
+  discoverSite,
+  excludeTranslatedUrls,
+  fetchPageTitle,
+  isTranslatedUrl,
+} = require("./discovery");
 const { buildDiscordPayload } = require("./discord");
 
 const POLL_INTERVAL_MS = 5_000;
@@ -26,10 +31,19 @@ async function sendDiscordAlert(site, urls) {
   const webhookUrl = getSetting("discord_webhook_url");
   if (!webhookUrl || urls.length === 0) return;
 
+  const titleUrls = urls.slice(0, 10);
+  const titleResults = await Promise.allSettled(titleUrls.map(fetchPageTitle));
+  const titles = new Map();
+  titleResults.forEach((result, index) => {
+    if (result.status === "fulfilled" && result.value) {
+      titles.set(titleUrls[index], result.value);
+    }
+  });
+
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(buildDiscordPayload(site, urls)),
+    body: JSON.stringify(buildDiscordPayload(site, urls, new Date(), titles)),
     signal: AbortSignal.timeout(10_000),
   });
 
