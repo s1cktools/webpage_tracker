@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PagePulse
 
-## Getting Started
+A small Node.js dashboard that watches website sitemaps and public links, stores
+discovered URLs in SQLite, and sends batched Discord webhook alerts for new URLs.
 
-First, run the development server:
+## Run locally
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```sh
+npm install
+npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`, save a Discord webhook, and add a website. The
+first scan silently records existing URLs; later discoveries trigger alerts.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Railway
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Deploy this repository as a Railway service.
+2. Add a persistent volume mounted at `/data`.
+3. Set `DATA_DIR=/data`.
+4. Set `DASHBOARD_PASSWORD` to protect the public dashboard with HTTP Basic Auth.
+5. Generate a Railway domain for the service.
 
-## Learn More
+The app uses Railway's `PORT` automatically. Run only one replica because the
+scanner runs inside the web process and SQLite is a single-file database.
 
-To learn more about Next.js, take a look at the following resources:
+## Discovery limits
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+There is no universal API listing every URL on a domain. PagePulse detects URLs
+exposed in sitemaps or linked from inspected public pages. Completely hidden or
+unlinked URLs cannot be discovered reliably.

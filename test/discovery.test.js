@@ -1,0 +1,58 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const {
+  extractLinks,
+  extractSitemapEntries,
+  normalizeDiscoveredUrl,
+  normalizeSiteUrl,
+} = require("../src/discovery");
+
+test("normalizes a website entered without a protocol", () => {
+  assert.equal(normalizeSiteUrl("openai.com"), "https://openai.com/");
+});
+
+test("rejects local addresses", () => {
+  assert.throws(() => normalizeSiteUrl("http://127.0.0.1:3000"), /not allowed/);
+});
+
+test("keeps same-domain and subdomain links while removing tracking parameters", () => {
+  const html = `
+    <a href="/introducing-gpt-6?utm_source=home">Launch</a>
+    <a href="https://docs.example.com/whats-new">Docs</a>
+    <a href="https://other.test/page">External</a>
+  `;
+  assert.deepEqual(
+    [...extractLinks(html, "https://example.com/", "example.com")].sort(),
+    [
+      "https://docs.example.com/whats-new",
+      "https://example.com/introducing-gpt-6",
+    ]
+  );
+});
+
+test("extracts pages and nested sitemaps", () => {
+  const pages = extractSitemapEntries(
+    "<urlset><url><loc>https://example.com/new</loc></url></urlset>",
+    "https://example.com/sitemap.xml",
+    "example.com"
+  );
+  assert.deepEqual(pages.pageUrls, ["https://example.com/new"]);
+
+  const index = extractSitemapEntries(
+    "<sitemapindex><sitemap><loc>/posts.xml</loc></sitemap></sitemapindex>",
+    "https://example.com/sitemap.xml",
+    "example.com"
+  );
+  assert.deepEqual(index.sitemapUrls, ["https://example.com/posts.xml"]);
+});
+
+test("drops fragments and external URLs", () => {
+  assert.equal(
+    normalizeDiscoveredUrl("/docs#intro", "https://example.com", "example.com"),
+    "https://example.com/docs"
+  );
+  assert.equal(
+    normalizeDiscoveredUrl("https://elsewhere.com", "https://example.com", "example.com"),
+    null
+  );
+});

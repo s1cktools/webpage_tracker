@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>PagePulse</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"><span>~/</span>pagepulse</a>
+      <div class="runtime">
+        <span class="signal"></span>
+        poll <%= pollSeconds %>s
+        <i>/</i>
+        discord <%= webhookConfigured ? "on" : "off" %>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="command">
+        <div>
+          <span class="kicker">WATCH</span>
+          <h1>domains</h1>
+        </div>
+        <form class="add-site" method="post" action="/sites">
+          <span class="prompt">$</span>
+          <input id="site-url" name="url" type="text" inputmode="url" aria-label="Domain" placeholder="openai.com" required>
+          <button type="submit">add</button>
+        </form>
+      </section>
+
+      <% if (message) { %><div class="notice"><span>ok</span> <%= message %></div><% } %>
+      <% if (error) { %><div class="notice error"><span>err</span> <%= error %></div><% } %>
+
+      <section class="summary">
+        <span><b><%= sites.length %></b> sites</span>
+        <span><b><%= sites.reduce((sum, site) => sum + site.url_count, 0) %></b> urls</span>
+        <span><b><%= sites.filter((site) => site.enabled).length %></b> active</span>
+      </section>
+
+      <div class="layout">
+        <section class="block watchlist">
+          <header class="block-header">
+            <span>target</span>
+            <span>state</span>
+            <span>urls</span>
+            <span>last scan</span>
+            <span></span>
+          </header>
+
+          <% if (!sites.length) { %>
+            <div class="empty">no targets</div>
+          <% } %>
+
+          <% sites.forEach((site) => { %>
+            <article class="site-row">
+              <div class="target">
+                <span class="signal <%= site.enabled ? '' : 'idle' %>"></span>
+                <a href="<%= site.url %>" target="_blank" rel="noreferrer"><%= site.hostname %></a>
+                <% if (site.last_error) { %><span class="row-error" title="<%= site.last_error %>">!</span><% } %>
+              </div>
+              <span class="state <%= site.enabled ? '' : 'idle' %>"><%= site.enabled ? "running" : "paused" %></span>
+              <span><%= site.url_count %></span>
+              <time datetime="<%= site.last_scanned_at || '' %>"><%= site.last_scanned_at ? site.last_scanned_at.replace("T", " ").replace(".000Z", "") : "pending" %></time>
+              <div class="actions">
+                <form method="post" action="/sites/<%= site.id %>/scan">
+                  <button title="Scan now">scan</button>
+                </form>
+                <form method="post" action="/sites/<%= site.id %>/toggle">
+                  <button><%= site.enabled ? "pause" : "resume" %></button>
+                </form>
+                <form method="post" action="/sites/<%= site.id %>/delete" onsubmit="return confirm('Remove <%= site.hostname %>?')">
+                  <button class="remove">rm</button>
+                </form>
+              </div>
+            </article>
+          <% }) %>
+        </section>
+
+        <aside class="sidebar">
+          <section class="block webhook">
+            <header class="section-title">
+              <span>webhook</span>
+              <span class="state"><%= webhookConfigured ? "connected" : "unset" %></span>
+            </header>
+            <form method="post" action="/settings/webhook">
+              <input id="webhook" name="webhook" type="password" aria-label="Discord webhook URL" autocomplete="off" placeholder="<%= webhookConfigured ? '••••••••••••••••••••••••' : 'discord webhook url' %>">
+              <div class="form-actions">
+                <button type="submit">save</button>
+                <% if (webhookConfigured) { %>
+                  <button type="submit" formaction="/settings/webhook/clear">clear</button>
+                <% } %>
+              </div>
+            </form>
+          </section>
+
+          <section class="block log">
+            <header class="section-title">
+              <span>discovery.log</span>
+              <span><%= recentUrls.length %></span>
+            </header>
+            <% if (!recentUrls.length) { %>
+              <div class="empty">no events</div>
+            <% } %>
+            <% recentUrls.forEach((item) => { %>
+              <a href="<%= item.url %>" target="_blank" rel="noreferrer">
+                <time><%= item.first_seen_at.slice(5, 16).replace("T", " ") %></time>
+                <span><%= item.hostname %><%= new URL(item.url).pathname %></span>
+              </a>
+            <% }) %>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </body>
+</html>
