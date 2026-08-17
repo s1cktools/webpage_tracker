@@ -73,6 +73,8 @@ function normalizeItems(target, data) {
       title: String(commit.commit?.message || commit.sha).split(/\r?\n/, 1)[0].slice(0, 256),
       url: commit.html_url,
       author: commit.author?.login || commit.commit?.author?.name || "unknown",
+      committedAt:
+        commit.commit?.committer?.date || commit.commit?.author?.date || null,
     }));
   }
 
@@ -82,6 +84,7 @@ function normalizeItems(target, data) {
     title: repo.name,
     url: repo.html_url,
     description: repo.description || "",
+    createdAt: repo.created_at || null,
   }));
 }
 

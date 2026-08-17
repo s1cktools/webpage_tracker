@@ -5,6 +5,8 @@ const {
   statements,
 } = require("./db");
 const { buildGitHubPayload } = require("./discord");
+const { buildGithubEvent } = require("./events");
+const { emitTrackerEvent } = require("./event-stream");
 const { fetchGitHubTarget, GitHubApiError } = require("./github");
 
 const GITHUB_POLL_INTERVAL_MS = 5_000;
@@ -59,8 +61,12 @@ async function scanGitHubTarget(targetOrId) {
     if (!result.unchanged) {
       const inserted = addGithubItems(target.id, result.items, !target.baselined);
       if (target.baselined) {
-        await sendGitHubAlert(target, inserted, Date.now() - startedAt);
         if (inserted.length) {
+          const detectedAt = new Date();
+          for (const item of inserted) {
+            emitTrackerEvent(buildGithubEvent(target, item, detectedAt));
+          }
+          await sendGitHubAlert(target, inserted, Date.now() - startedAt);
           const noun =
             target.kind === "repo"
               ? inserted.length === 1 ? "commit" : "commits"

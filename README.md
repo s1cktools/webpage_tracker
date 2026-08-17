@@ -37,6 +37,44 @@ added, modified, and removed UI strings and include a limited set of changed
 lines. The dashboard can pause the monitor, trigger a manual check, and display
 recent changes or endpoint errors.
 
+## Event stream
+
+Set `EVENT_STREAM_TOKEN` to expose an authenticated Socket.IO namespace at
+`/events` on the app's existing URL. Every post-baseline website, GitHub, or
+Binance discovery is broadcast as `tracker_event` in this minimal shape:
+
+```json
+{
+  "event_id": "67a68fa2-55c8-45d9-9419-a341c6119742",
+  "event_type": "website_page",
+  "detected_at": "2026-08-17T13:33:04.215Z",
+  "data": {}
+}
+```
+
+The supported event types are `website_page`, `github_commit`,
+`github_repository`, and `binance_ui`. A data server can subscribe with:
+
+```js
+import { io } from "socket.io-client";
+
+const socket = io("https://your-watcher.example/events", {
+  transports: ["websocket"],
+  auth: { token: process.env.WEBPAGE_TRACKER_TOKEN },
+});
+
+socket.on("tracker_event", (event) => {
+  // Forward event to the data server's connected clients.
+});
+```
+
+The stream intentionally has no queue or replay. Events emitted while no
+subscriber is connected are not retained for later delivery. Discord delivery
+continues independently.
+
+See [EVENT_STREAM.md](EVENT_STREAM.md) for the complete listener setup and
+event payloads.
+
 ## Railway
 
 1. Deploy this repository as a Railway service.

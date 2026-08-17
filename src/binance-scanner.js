@@ -5,6 +5,8 @@ const {
 } = require("./binance");
 const { addBinanceChanges, getSetting, statements } = require("./db");
 const { buildBinancePayload } = require("./discord");
+const { buildBinanceUiEvent } = require("./events");
+const { emitTrackerEvent } = require("./event-stream");
 
 const BINANCE_POLL_INTERVAL_MS = 5_000;
 const MAX_CONCURRENCY = 6;
@@ -44,6 +46,7 @@ async function scanNamespace(row) {
     if (!row.baselined || changes.length === 0) return null;
 
     addBinanceChanges(row.name, changes);
+    emitTrackerEvent(buildBinanceUiEvent(row.name, changes));
     return { namespace: row.name, changes };
   } catch (error) {
     statements.markBinanceError.run(

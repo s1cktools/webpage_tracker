@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const http = require("node:http");
 const path = require("node:path");
 const express = require("express");
 const { getSetting, pruneDiscoveredUrls, statements } = require("./db");
@@ -9,6 +10,7 @@ const {
   startBinanceScanner,
 } = require("./binance-scanner");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
+const { attachEventStream } = require("./event-stream");
 const { parseGitHubTarget } = require("./github");
 const {
   GITHUB_POLL_INTERVAL_MS,
@@ -240,7 +242,10 @@ app.post("/binance/scan", (request, response) => {
 
 app.use((request, response) => response.status(404).send("Not found"));
 
-app.listen(port, "0.0.0.0", () => {
+const httpServer = http.createServer(app);
+attachEventStream(httpServer);
+
+httpServer.listen(port, "0.0.0.0", () => {
   console.log(`PagePulse listening on http://localhost:${port}`);
   startScanner();
   startGithubScanner();

@@ -11,7 +11,9 @@ const {
   fetchPageTitle,
   isTranslatedUrl,
 } = require("./discovery");
-const { buildDiscordPayload } = require("./discord");
+const { buildDiscordPayload, fallbackTitle } = require("./discord");
+const { buildWebsitePageEvent } = require("./events");
+const { emitTrackerEvent } = require("./event-stream");
 
 const POLL_INTERVAL_MS = 5_000;
 const LOG_INTERVAL_MS = 5 * 60_000;
@@ -27,10 +29,7 @@ function logOccasionally(siteId, type, level, message) {
   addLog(siteId, level, message);
 }
 
-async function sendDiscordAlert(site, urls, sources, scanDurationMs) {
-  const webhookUrl = getSetting("discord_webhook_url");
-  if (!webhookUrl || urls.length === 0) return;
-
+async function fetchPageTitles(urls) {
   const titleUrls = urls.slice(0, 10);
   const titleResults = await Promise.allSettled(titleUrls.map(fetchPageTitle));
   const titles = new Map();
@@ -39,7 +38,12 @@ async function sendDiscordAlert(site, urls, sources, scanDurationMs) {
       titles.set(titleUrls[index], result.value);
     }
   });
+  return titles;
+}
 
+async function sendDiscordAlert(site, urls, sources, titles, scanDurationMs) {
+  const webhookUrl = getSetting("discord_webhook_url");
+  if (!webhookUrl || urls.length === 0) return;
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -102,8 +106,27 @@ async function scanSite(siteOrId) {
     }
 
     if (site.baselined) {
-      await sendDiscordAlert(site, inserted, sources, Date.now() - startedAt);
       if (inserted.length) {
+        const detectedAt = new Date();
+        const titles = await fetchPageTitles(inserted);
+        for (const url of inserted) {
+          emitTrackerEvent(
+            buildWebsitePageEvent(
+              site,
+              url,
+              titles.get(url) || fallbackTitle(url),
+              sources.get(url),
+              detectedAt
+            )
+          );
+        }
+        await sendDiscordAlert(
+          site,
+          inserted,
+          sources,
+          titles,
+          Date.now() - startedAt
+        );
         addLog(site.id, "new", `${inserted.length} new URL${inserted.length === 1 ? "" : "s"}`);
       }
     } else {

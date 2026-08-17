@@ -47,7 +47,10 @@ test("normalizes commits and repositories", () => {
         sha: "abc123",
         html_url: "https://github.com/openai/codex/commit/abc123",
         author: { login: "octocat" },
-        commit: { message: "Add monitor\n\nDetails" },
+        commit: {
+          message: "Add monitor\n\nDetails",
+          committer: { date: "2026-08-17T13:30:00.000Z" },
+        },
       }]
     ),
     [{
@@ -56,6 +59,7 @@ test("normalizes commits and repositories", () => {
       title: "Add monitor",
       url: "https://github.com/openai/codex/commit/abc123",
       author: "octocat",
+      committedAt: "2026-08-17T13:30:00.000Z",
     }]
   );
 
