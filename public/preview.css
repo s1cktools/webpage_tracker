@@ -159,6 +159,7 @@ section {
 }
 
 .embed.github::before { background: #6e40c9; }
+.embed.binance::before { background: #2ebd85; }
 
 .embed-author {
   margin-bottom: 7px;
@@ -186,6 +187,25 @@ section {
   color: #b5bac1;
   font-size: 13px;
 }
+
+.diff-summary {
+  margin-bottom: 8px;
+  color: #b5bac1;
+  font-size: 12px;
+}
+
+.diff {
+  margin: 0;
+  padding: 10px;
+  border-radius: 3px;
+  background: #1e1f22;
+  color: #f0b90b;
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.diff span { color: #57f287; }
 
 .message-content {
   margin: 2px 0 5px;

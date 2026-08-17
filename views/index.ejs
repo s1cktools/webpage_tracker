@@ -191,6 +191,64 @@
           </article>
         <% }) %>
       </section>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">WATCH</span>
+          <h1>binance.ui</h1>
+        </div>
+        <div class="binance-controls">
+          <form method="post" action="/binance/scan">
+            <button>scan</button>
+          </form>
+          <form method="post" action="/binance/toggle">
+            <button><%= binanceEnabled ? "pause" : "resume" %></button>
+          </form>
+        </div>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= binanceNamespaces.length %></b> namespaces</span>
+        <span><b><%= binanceNamespaces.filter((item) => item.baselined).length %></b> baselined</span>
+        <span><b><%= binanceChangeCount %></b> changes</span>
+        <span><b><%= binanceNamespaces.filter((item) => item.last_error).length %></b> errors</span>
+        <span><b><%= binancePollSeconds %>s</b> poll</span>
+        <span class="state <%= binanceEnabled ? '' : 'idle' %>"><%= binanceEnabled ? "running" : "paused" %></span>
+      </section>
+
+      <% const binanceErrors = binanceNamespaces.filter((item) => item.last_error); %>
+      <% if (binanceErrors.length) { %>
+        <section class="binance-errors">
+          <% binanceErrors.forEach((item) => { %>
+            <span title="<%= item.last_error %>"><b><%= item.name %></b> · <%= item.last_error %></span>
+          <% }) %>
+        </section>
+      <% } %>
+
+      <section class="block binance-changes">
+        <header class="binance-header">
+          <span>namespace</span>
+          <span>change</span>
+          <span>key</span>
+          <span>value</span>
+          <span>detected</span>
+        </header>
+
+        <% if (!recentBinanceChanges.length) { %>
+          <div class="empty">baseline only · no changes detected</div>
+        <% } %>
+
+        <% recentBinanceChanges.forEach((change) => { %>
+          <% const changeValue = change.new_value || change.old_value || ""; %>
+          <article class="binance-row">
+            <b><%= change.namespace %></b>
+            <span class="change-type <%= change.change_type %>"><%= change.change_type %></span>
+            <code title="<%= change.item_key %>"><%= change.item_key %></code>
+            <span title="<%= changeValue %>"><%= changeValue %></span>
+            <time datetime="<%= change.detected_at %>"><%= change.detected_at %></time>
+          </article>
+        <% }) %>
+      </section>
     </main>
   </body>
 </html>

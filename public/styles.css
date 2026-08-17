@@ -219,6 +219,83 @@ button:hover { color: var(--red); }
 .github-row:hover { background: var(--surface); }
 .github-row time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.binance-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.binance-controls form { margin: 0; }
+
+.binance-controls button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.binance-controls button:hover {
+  border-color: var(--red);
+  color: var(--text);
+}
+
+.binance-errors {
+  display: grid;
+  gap: 5px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--red);
+  font-size: 10px;
+}
+
+.binance-errors span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.binance-changes {
+  border-top: 0;
+  border-radius: 0;
+}
+
+.binance-header,
+.binance-row {
+  display: grid;
+  grid-template-columns: minmax(130px, .8fr) 65px minmax(180px, 1.25fr) minmax(220px, 1.5fr) 145px;
+  gap: 16px;
+  align-items: center;
+}
+
+.binance-header {
+  min-height: 35px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.binance-row {
+  min-height: 45px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.binance-row:last-child { border-bottom: 0; }
+.binance-row:hover { background: var(--surface); }
+.binance-row > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.binance-row code { color: var(--text); }
+.change-type.added { color: #2ebd85; }
+.change-type.changed { color: #f0b90b; }
+.change-type.removed { color: var(--red); }
+
 .block { min-width: 0; }
 .watchlist { border-right: 1px solid var(--line); }
 
@@ -385,4 +462,12 @@ button:hover { color: var(--red); }
   }
   .github-row > span, .github-row > time { display: none; }
   .github-row .actions { grid-column: 2; grid-row: 1; }
+  .binance-header { display: none; }
+  .binance-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding: 11px 12px;
+  }
+  .binance-row code { grid-column: 1 / -1; }
+  .binance-row > span:not(.change-type), .binance-row time { display: none; }
 }

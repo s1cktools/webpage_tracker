@@ -2,6 +2,12 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const express = require("express");
 const { getSetting, pruneDiscoveredUrls, statements } = require("./db");
+const {
+  BINANCE_POLL_INTERVAL_MS,
+  isBinanceEnabled,
+  scanBinanceUi,
+  startBinanceScanner,
+} = require("./binance-scanner");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { parseGitHubTarget } = require("./github");
 const {
@@ -46,10 +52,15 @@ app.get("/", (request, response) => {
     recentUrls: statements.recentUrls.all(30),
     githubTargets: statements.listGithubTargets.all(),
     recentGithubItems: statements.recentGithubItems.all(20),
+    binanceNamespaces: statements.listBinanceNamespaces.all(),
+    recentBinanceChanges: statements.recentBinanceChanges.all(30),
+    binanceChangeCount: statements.countBinanceChanges.get().count,
+    binanceEnabled: isBinanceEnabled(),
     webhookConfigured: Boolean(webhook),
     githubConfigured: Boolean(process.env.GITHUB_TOKEN),
     pollSeconds: POLL_INTERVAL_MS / 1000,
     githubPollSeconds: GITHUB_POLL_INTERVAL_MS / 1000,
+    binancePollSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
     message: request.query.message || "",
     error: request.query.error || "",
   });
@@ -215,10 +226,23 @@ app.post("/settings/webhook/clear", (request, response) => {
   response.redirect("/?message=Discord webhook cleared.");
 });
 
+app.post("/binance/toggle", (request, response) => {
+  const enabled = !isBinanceEnabled();
+  statements.setSetting.run("binance_ui_enabled", enabled ? "1" : "0");
+  if (enabled) scanBinanceUi();
+  response.redirect(`/?message=Binance UI monitor ${enabled ? "resumed" : "paused"}.`);
+});
+
+app.post("/binance/scan", (request, response) => {
+  scanBinanceUi(true);
+  response.redirect("/?message=Binance UI check started.");
+});
+
 app.use((request, response) => response.status(404).send("Not found"));
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`PagePulse listening on http://localhost:${port}`);
   startScanner();
   startGithubScanner();
+  startBinanceScanner();
 });

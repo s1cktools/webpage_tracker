@@ -28,6 +28,15 @@ GitHub targets are checked every five seconds. The watcher sends stored ETags
 with each request, accepts `304 Not Modified` responses, and pauses when GitHub
 reports that a rate limit has been reached.
 
+## Binance UI monitoring
+
+The built-in Binance monitor checks the discovered English UI translation
+namespaces every five seconds. It uses ETags, silently saves the first JSON
+snapshot, then compares individual keys and values. Discord alerts summarize
+added, modified, and removed UI strings and include a limited set of changed
+lines. The dashboard can pause the monitor, trigger a manual check, and display
+recent changes or endpoint errors.
+
 ## Railway
 
 1. Deploy this repository as a Railway service.

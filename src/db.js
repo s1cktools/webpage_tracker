@@ -80,6 +80,25 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS binance_ui_namespaces (
+    name TEXT PRIMARY KEY,
+    etag TEXT,
+    snapshot_json TEXT,
+    baselined INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT,
+    last_error TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS binance_ui_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    namespace TEXT NOT NULL REFERENCES binance_ui_namespaces(name) ON DELETE CASCADE,
+    change_type TEXT NOT NULL CHECK(change_type IN ('added', 'changed', 'removed')),
+    item_key TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS discovered_urls_site_seen
     ON discovered_urls(site_id, first_seen_at DESC);
 
@@ -91,6 +110,9 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS github_logs_target
     ON github_logs(target_id, id DESC);
+
+  CREATE INDEX IF NOT EXISTS binance_ui_changes_detected
+    ON binance_ui_changes(id DESC);
 `);
 
 const urlColumns = db.prepare("PRAGMA table_info(discovered_urls)").all();
@@ -250,6 +272,46 @@ const statements = {
     ORDER BY github_logs.id DESC
     LIMIT ?
   `),
+  ensureBinanceNamespace: db.prepare(`
+    INSERT OR IGNORE INTO binance_ui_namespaces (name) VALUES (?)
+  `),
+  listBinanceNamespaces: db.prepare(`
+    SELECT * FROM binance_ui_namespaces ORDER BY name COLLATE NOCASE
+  `),
+  markBinanceUnchanged: db.prepare(`
+    UPDATE binance_ui_namespaces
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = NULL
+    WHERE name = ?
+  `),
+  saveBinanceSnapshot: db.prepare(`
+    UPDATE binance_ui_namespaces
+    SET etag = ?,
+        snapshot_json = ?,
+        baselined = 1,
+        last_checked_at = CURRENT_TIMESTAMP,
+        last_error = NULL
+    WHERE name = ?
+  `),
+  markBinanceError: db.prepare(`
+    UPDATE binance_ui_namespaces
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    WHERE name = ?
+  `),
+  insertBinanceChange: db.prepare(`
+    INSERT INTO binance_ui_changes
+      (namespace, change_type, item_key, old_value, new_value)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  trimBinanceChanges: db.prepare(`
+    DELETE FROM binance_ui_changes
+    WHERE id NOT IN (SELECT id FROM binance_ui_changes ORDER BY id DESC LIMIT 500)
+  `),
+  recentBinanceChanges: db.prepare(`
+    SELECT * FROM binance_ui_changes ORDER BY id DESC LIMIT ?
+  `),
+  countBinanceChanges: db.prepare(`
+    SELECT COUNT(*) AS count FROM binance_ui_changes
+  `),
 };
 
 function getSetting(key) {
@@ -320,6 +382,26 @@ function addGithubLog(targetId, level, message) {
   statements.trimGithubLogs.run();
 }
 
+function addBinanceChanges(namespace, changes) {
+  db.exec("BEGIN");
+  try {
+    for (const change of changes) {
+      statements.insertBinanceChange.run(
+        namespace,
+        change.type,
+        change.key,
+        change.oldValue ?? null,
+        change.newValue ?? null
+      );
+    }
+    statements.trimBinanceChanges.run();
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 module.exports = {
   db,
   statements,
@@ -329,4 +411,5 @@ module.exports = {
   pruneDiscoveredUrls,
   addGithubItems,
   addGithubLog,
+  addBinanceChanges,
 };

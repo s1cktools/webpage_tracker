@@ -1,5 +1,8 @@
 const EMBED_RED = 0xef4444;
 const GITHUB_PURPLE = 0x6e40c9;
+const BINANCE_GREEN = 0x2ebd85;
+const BINANCE_AMBER = 0xf0b90b;
+const BINANCE_RED = 0xef4444;
 const MAX_VISIBLE_URLS = 10;
 
 function displayUrl(rawUrl, siteHostname) {
@@ -88,9 +91,70 @@ function buildGitHubPayload(target, items, scanDurationMs, now = new Date()) {
   };
 }
 
+function formatBinanceValue(value, limit = 120) {
+  const text = String(value ?? "")
+    .replace(/```/g, "'''")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function formatBinanceChanges(changes) {
+  const counts = { added: 0, changed: 0, removed: 0 };
+  const lines = [];
+  for (const change of changes) {
+    counts[change.type]++;
+    if (lines.join("\n").length >= 700) continue;
+    if (change.type === "added") {
+      lines.push(`+ ${change.key} = ${formatBinanceValue(change.newValue)}`);
+    } else if (change.type === "removed") {
+      lines.push(`- ${change.key}`);
+    } else {
+      lines.push(
+        `! ${change.key}: ${formatBinanceValue(change.oldValue, 55)} → ${formatBinanceValue(change.newValue, 55)}`
+      );
+    }
+  }
+
+  const shown = lines.length;
+  const summary = `+${counts.added} added · ~${counts.changed} changed · -${counts.removed} removed`;
+  const remainder =
+    changes.length > shown ? `\n… ${changes.length - shown} more changes` : "";
+  return `${summary}\n\`\`\`diff\n${lines.join("\n")}${remainder}\n\`\`\``;
+}
+
+function buildBinancePayload(events, scanDurationMs, now = new Date()) {
+  return {
+    username: "the watcher",
+    allowed_mentions: { parse: [] },
+    embeds: events.map((event) => {
+      const types = new Set(event.changes.map((change) => change.type));
+      const color =
+        types.size === 1 && types.has("added")
+          ? BINANCE_GREEN
+          : types.size === 1 && types.has("removed")
+            ? BINANCE_RED
+            : BINANCE_AMBER;
+      return {
+        color,
+        author: { name: "binance.com UI" },
+        title: `${event.namespace} updated`,
+        url: `https://bin.bnbstatic.com/api/i18n/-/web/cms/en/${encodeURIComponent(event.namespace)}`,
+        description: formatBinanceChanges(event.changes),
+        footer: {
+          text: `BINANCE UI · i18n · ${scanDurationMs}ms`,
+        },
+        timestamp: now.toISOString(),
+      };
+    }),
+  };
+}
+
 module.exports = {
   buildDiscordPayload,
   buildGitHubPayload,
+  buildBinancePayload,
   displayUrl,
   fallbackTitle,
+  formatBinanceChanges,
 };
