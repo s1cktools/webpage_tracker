@@ -163,9 +163,10 @@ async function discoverSitemapLocations(siteUrl) {
   return locations;
 }
 
-async function discoverSite(siteUrl, onLog = () => {}) {
+async function discoverSite(siteUrl, onLog = () => {}, onDiscover = () => {}) {
   const site = new URL(siteUrl);
   const found = new Set([site.toString()]);
+  onDiscover(site.toString(), "homepage");
   const sitemapQueue = [...(await discoverSitemapLocations(siteUrl))];
   const visitedSitemaps = new Set();
 
@@ -199,6 +200,7 @@ async function discoverSite(siteUrl, onLog = () => {}) {
       for (const url of result.value.pageUrls) {
         if (found.size >= MAX_URLS) break;
         found.add(url);
+        onDiscover(url, "sitemap");
       }
       for (const sitemapUrl of result.value.sitemapUrls) {
         if (!visitedSitemaps.has(sitemapUrl)) sitemapQueue.push(sitemapUrl);
@@ -228,7 +230,10 @@ async function discoverSite(siteUrl, onLog = () => {}) {
       continue;
     }
     extractLinks(result.value.text, result.value.finalUrl, site.hostname)
-      .forEach((url) => found.add(url));
+      .forEach((url) => {
+        found.add(url);
+        onDiscover(url, "link");
+      });
   }
 
   return [...found].slice(0, MAX_URLS).sort();

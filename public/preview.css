@@ -147,6 +147,8 @@ section {
   color: #dbdee1;
 }
 
+.embed.stacked { margin-top: 4px; }
+
 .embed::before {
   content: "";
   position: absolute;
@@ -156,6 +158,13 @@ section {
   background: var(--red);
 }
 
+.embed-author {
+  margin-bottom: 7px;
+  color: #f2f3f5;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .embed-title {
   margin-bottom: 8px;
   color: #f2f3f5;
@@ -163,31 +172,17 @@ section {
   font-weight: 600;
 }
 
-.event-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 10px;
-}
-
-.event-meta span {
-  padding: 3px 5px;
-  border-radius: 3px;
-  background: #383a40;
-  color: #b5bac1;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: .03em;
-}
-
-.event-meta span:first-child { background: #3b1719; color: #ff7b7f; }
-
 .embed-link {
   color: #00a8fc;
   font-size: 13px;
   overflow-wrap: anywhere;
   text-decoration: none;
+}
+
+.message-content {
+  margin: 2px 0 5px;
+  color: #dbdee1;
+  font-size: 13px;
 }
 
 .fields {

@@ -8,18 +8,19 @@ const site = {
 };
 const now = new Date("2026-08-17T09:20:00.000Z");
 
-test("builds a clean single-page embed using the site nickname", () => {
+test("builds a clean single-page embed with its full URL", () => {
   const payload = buildDiscordPayload(
     site,
     ["https://openai.com/research/gpt-6"],
     now
   );
 
-  assert.equal(payload.embeds[0].title, "New OpenAI Page Detected");
+  assert.equal(payload.embeds[0].author.name, "openai.com");
+  assert.equal(payload.embeds[0].title, "GPT 6");
   assert.equal(payload.embeds[0].url, "https://openai.com/research/gpt-6");
-  assert.match(payload.embeds[0].description, /research\/gpt-6/);
+  assert.equal(payload.embeds[0].description, "https://openai.com/research/gpt-6");
   assert.equal(payload.username, "the watcher");
-  assert.equal(payload.embeds[0].footer.text, "openai.com");
+  assert.equal(payload.embeds[0].footer.text, "NEW PAGE · discovery · 0ms");
 });
 
 test("builds a capped multi-page embed", () => {
@@ -29,16 +30,17 @@ test("builds a capped multi-page embed", () => {
   );
   const payload = buildDiscordPayload(site, urls, now);
 
-  assert.equal(payload.embeds[0].title, "12 New OpenAI Pages Detected");
-  assert.match(payload.embeds[0].description, /\+2 more URLs/);
-  assert.doesNotMatch(payload.embeds[0].description, /page-11/);
+  assert.equal(payload.embeds.length, 10);
+  assert.equal(payload.content, "+2 more new pages were discovered.");
+  assert.equal(payload.embeds[9].title, "Page 10");
 });
 
 test("uses fetched titles for new page labels", () => {
   const url = "https://openai.com/research/gpt-6";
   const titles = new Map([[url, "Introducing GPT-6"]]);
-  const payload = buildDiscordPayload(site, [url], now, titles);
+  const sources = new Map([[url, "sitemap"]]);
+  const payload = buildDiscordPayload(site, [url], now, titles, sources, 3821);
 
   assert.equal(payload.embeds[0].title, "Introducing GPT-6");
-  assert.match(payload.embeds[0].description, /Introducing GPT-6/);
+  assert.equal(payload.embeds[0].footer.text, "NEW PAGE · sitemap · 3821ms");
 });

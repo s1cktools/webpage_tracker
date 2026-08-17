@@ -27,7 +27,7 @@ function logOccasionally(siteId, type, level, message) {
   addLog(siteId, level, message);
 }
 
-async function sendDiscordAlert(site, urls) {
+async function sendDiscordAlert(site, urls, sources, scanDurationMs) {
   const webhookUrl = getSetting("discord_webhook_url");
   if (!webhookUrl || urls.length === 0) return;
 
@@ -43,7 +43,9 @@ async function sendDiscordAlert(site, urls) {
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(buildDiscordPayload(site, urls, new Date(), titles)),
+    body: JSON.stringify(
+      buildDiscordPayload(site, urls, new Date(), titles, sources, scanDurationMs)
+    ),
     signal: AbortSignal.timeout(10_000),
   });
 
@@ -61,15 +63,22 @@ async function scanSite(siteOrId) {
   const startedAt = Date.now();
   try {
     const issues = [];
+    const sources = new Map();
     let baselineBlocked = false;
-    const discoveredUrls = await discoverSite(site.url, (level, message) => {
-      if (level === "warn" || level === "error") {
-        issues.push(message);
-        if (level === "error") baselineBlocked = true;
-      } else {
-        addLog(site.id, level, message);
+    const discoveredUrls = await discoverSite(
+      site.url,
+      (level, message) => {
+        if (level === "warn" || level === "error") {
+          issues.push(message);
+          if (level === "error") baselineBlocked = true;
+        } else {
+          addLog(site.id, level, message);
+        }
+      },
+      (url, source) => {
+        if (!sources.has(url)) sources.set(url, source);
       }
-    });
+    );
     const urls = site.ignore_locales
       ? excludeTranslatedUrls(discoveredUrls)
       : discoveredUrls;
@@ -93,7 +102,7 @@ async function scanSite(siteOrId) {
     }
 
     if (site.baselined) {
-      await sendDiscordAlert(site, inserted);
+      await sendDiscordAlert(site, inserted, sources, Date.now() - startedAt);
       if (inserted.length) {
         addLog(site.id, "new", `${inserted.length} new URL${inserted.length === 1 ? "" : "s"}`);
       }

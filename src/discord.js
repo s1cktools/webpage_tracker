@@ -1,45 +1,58 @@
 const EMBED_RED = 0xef4444;
 const MAX_VISIBLE_URLS = 10;
 
-function markdownEscape(value) {
-  return String(value).replace(/([\\`*_[\]()~>])/g, "\\$1");
-}
-
 function displayUrl(rawUrl, siteHostname) {
   const url = new URL(rawUrl);
   const path = `${url.pathname}${url.search}` || "/";
   return url.hostname === siteHostname ? path : `${url.hostname}${path}`;
 }
 
-function buildDiscordPayload(site, urls, now = new Date(), titles = new Map()) {
-  const nickname = site.nickname || site.hostname;
-  const single = urls.length === 1;
-  const shown = urls.slice(0, MAX_VISIBLE_URLS);
-  const lines = shown.map((url, index) => {
-    const label = markdownEscape(titles.get(url) || displayUrl(url, site.hostname));
-    return `**${String(index + 1).padStart(2, "0")}**  [${label}](<${url}>)`;
-  });
+function fallbackTitle(rawUrl) {
+  const url = new URL(rawUrl);
+  const segment = url.pathname.split("/").filter(Boolean).at(-1);
+  if (!segment) return url.hostname;
 
-  if (urls.length > shown.length) {
-    lines.push(`*+${urls.length - shown.length} more URLs*`);
-  }
+  const acronyms = new Set(["ai", "api", "gpt", "pdf", "rss"]);
+  const smallWords = new Set(["a", "an", "and", "at", "for", "in", "of", "on", "the", "to"]);
+  return decodeURIComponent(segment)
+    .replace(/\.[a-z\d]+$/i, "")
+    .split(/[-_]+/)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (acronyms.has(lower)) return lower.toUpperCase();
+      if (index > 0 && smallWords.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
+function buildDiscordPayload(
+  site,
+  urls,
+  now = new Date(),
+  titles = new Map(),
+  sources = new Map(),
+  scanDurationMs = 0
+) {
+  const shown = urls.slice(0, MAX_VISIBLE_URLS);
+  const extra = urls.length - shown.length;
 
   return {
     username: "the watcher",
     allowed_mentions: { parse: [] },
-    embeds: [
-      {
-        color: EMBED_RED,
-        title: single
-          ? titles.get(urls[0]) || `New ${nickname} Page Detected`
-          : `${urls.length} New ${nickname} Pages Detected`,
-        url: single ? urls[0] : undefined,
-        description: lines.join("\n"),
-        footer: { text: site.hostname },
-        timestamp: now.toISOString(),
+    content: extra > 0 ? `+${extra} more new pages were discovered.` : undefined,
+    embeds: shown.map((url) => ({
+      color: EMBED_RED,
+      author: { name: site.hostname },
+      title: titles.get(url) || fallbackTitle(url),
+      url,
+      description: url,
+      footer: {
+        text: `NEW PAGE · ${sources.get(url) || "discovery"} · ${scanDurationMs}ms`,
       },
-    ],
+      timestamp: now.toISOString(),
+    })),
   };
 }
 
-module.exports = { buildDiscordPayload, displayUrl };
+module.exports = { buildDiscordPayload, displayUrl, fallbackTitle };
