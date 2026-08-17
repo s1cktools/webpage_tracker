@@ -57,7 +57,7 @@ app.post("/sites", (request, response) => {
     response.redirect("/?message=Site added. Building its baseline now.");
   } catch (error) {
     const message =
-      error.code === "SQLITE_CONSTRAINT_UNIQUE"
+      String(error.message).includes("UNIQUE constraint failed")
         ? "That site is already being tracked."
         : error.message;
     response.redirect(`/?error=${encodeURIComponent(message)}`);

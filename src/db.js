@@ -1,13 +1,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const Database = require("better-sqlite3");
+const { DatabaseSync } = require("node:sqlite");
 
 const dataDirectory = process.env.DATA_DIR || path.join(process.cwd(), "data");
 fs.mkdirSync(dataDirectory, { recursive: true });
 
-const db = new Database(path.join(dataDirectory, "tracker.db"));
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+const db = new DatabaseSync(path.join(dataDirectory, "tracker.db"));
+db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA foreign_keys = ON");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -95,14 +95,18 @@ function getSetting(key) {
 
 function addDiscoveredUrls(siteId, urls, isBaseline = false) {
   const inserted = [];
-  const insertAll = db.transaction((values) => {
-    for (const url of values) {
+  db.exec("BEGIN");
+  try {
+    for (const url of urls) {
       if (statements.insertUrl.run(siteId, url, isBaseline ? 1 : 0).changes) {
         inserted.push(url);
       }
     }
-  });
-  insertAll(urls);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
   return inserted;
 }
 
