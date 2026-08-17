@@ -16,6 +16,8 @@
         <i>/</i>
         discord <%= webhookConfigured ? "on" : "off" %>
         <i>/</i>
+        github <%= githubConfigured ? "on" : "off" %>
+        <i>/</i>
         <a href="/logs">logs</a>
         <i>/</i>
         <a href="/preview">preview</a>
@@ -125,6 +127,70 @@
           </section>
         </aside>
       </div>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">WATCH</span>
+          <h1>github</h1>
+        </div>
+        <form class="add-site" method="post" action="/github-targets">
+          <span class="prompt">$</span>
+          <input class="nickname-input" name="nickname" type="text" aria-label="Nickname" placeholder="optional" maxlength="40">
+          <input name="target" type="text" aria-label="GitHub user or repository" placeholder="github.com/owner/repo" required>
+          <button type="submit">add</button>
+        </form>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= githubTargets.length %></b> targets</span>
+        <span><b><%= githubTargets.reduce((sum, target) => sum + target.item_count, 0) %></b> items</span>
+        <span><b><%= githubTargets.filter((target) => target.enabled).length %></b> active</span>
+        <span><b><%= githubPollSeconds %>s</b> poll</span>
+      </section>
+
+      <section class="block github-watchlist">
+        <header class="github-header">
+          <span>target</span>
+          <span>type</span>
+          <span>state</span>
+          <span>items</span>
+          <span>last check</span>
+          <span></span>
+        </header>
+
+        <% if (!githubTargets.length) { %>
+          <div class="empty">no github targets</div>
+        <% } %>
+
+        <% githubTargets.forEach((target) => { %>
+          <article class="github-row">
+            <div class="target">
+              <span class="signal <%= target.enabled ? '' : 'idle' %>"></span>
+              <a href="https://github.com/<%= target.owner %><%= target.repo ? `/${target.repo}` : '' %>" target="_blank" rel="noreferrer">
+                <b><%= target.nickname || target.target_key %></b>
+                <small><%= target.target_key %></small>
+              </a>
+              <% if (target.last_error) { %><span class="row-error" title="<%= target.last_error %>">!</span><% } %>
+            </div>
+            <span><%= target.kind %></span>
+            <span class="state <%= target.enabled ? '' : 'idle' %>"><%= target.enabled ? "running" : "paused" %></span>
+            <span><%= target.item_count %></span>
+            <time datetime="<%= target.last_checked_at || '' %>"><%= target.last_checked_at || "pending" %></time>
+            <div class="actions">
+              <a href="/logs?github=<%= target.id %>">logs</a>
+              <form method="post" action="/github-targets/<%= target.id %>/scan">
+                <button title="Check now">scan</button>
+              </form>
+              <form method="post" action="/github-targets/<%= target.id %>/toggle">
+                <button><%= target.enabled ? "pause" : "resume" %></button>
+              </form>
+              <form method="post" action="/github-targets/<%= target.id %>/delete" onsubmit="return confirm('Remove <%= target.target_key %>?')">
+                <button class="remove">rm</button>
+              </form>
+            </div>
+          </article>
+        <% }) %>
+      </section>
     </main>
   </body>
 </html>

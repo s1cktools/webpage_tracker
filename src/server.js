@@ -3,6 +3,12 @@ const path = require("node:path");
 const express = require("express");
 const { getSetting, pruneDiscoveredUrls, statements } = require("./db");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
+const { parseGitHubTarget } = require("./github");
+const {
+  GITHUB_POLL_INTERVAL_MS,
+  scanGitHubTarget,
+  startGithubScanner,
+} = require("./github-scanner");
 const { POLL_INTERVAL_MS, scanSite, startScanner } = require("./scanner");
 
 const app = express();
@@ -38,8 +44,12 @@ app.get("/", (request, response) => {
   response.render("index", {
     sites: statements.listSites.all(),
     recentUrls: statements.recentUrls.all(30),
+    githubTargets: statements.listGithubTargets.all(),
+    recentGithubItems: statements.recentGithubItems.all(20),
     webhookConfigured: Boolean(webhook),
+    githubConfigured: Boolean(process.env.GITHUB_TOKEN),
     pollSeconds: POLL_INTERVAL_MS / 1000,
+    githubPollSeconds: GITHUB_POLL_INTERVAL_MS / 1000,
     message: request.query.message || "",
     error: request.query.error || "",
   });
@@ -51,13 +61,82 @@ app.get("/preview", (request, response) => {
 
 app.get("/logs", (request, response) => {
   const sites = statements.listSites.all();
+  const githubTargets = statements.listGithubTargets.all();
   const requestedSiteId = Number(request.query.site);
+  const requestedGithubId = Number(request.query.github);
   const selectedSite = sites.find((site) => site.id === requestedSiteId) || null;
-  const logs = selectedSite
-    ? statements.siteLogs.all(selectedSite.id, 100)
-    : statements.globalLogs.all(100);
+  const selectedGithub =
+    githubTargets.find((target) => target.id === requestedGithubId) || null;
 
-  response.render("logs", { sites, selectedSite, logs });
+  const websiteLogs = selectedGithub
+    ? []
+    : (selectedSite
+        ? statements.siteLogs.all(selectedSite.id, 100)
+        : statements.globalLogs.all(100)
+      ).map((log) => ({
+        ...log,
+        targetName: log.nickname,
+        targetUrl: `/logs?site=${log.site_id}`,
+      }));
+  const githubLogs = selectedSite
+    ? []
+    : (selectedGithub
+        ? statements.targetGithubLogs.all(selectedGithub.id, 100)
+        : statements.globalGithubLogs.all(100)
+      ).map((log) => ({
+        ...log,
+        targetName: log.target_name,
+        targetUrl: `/logs?github=${log.target_id}`,
+      }));
+  const logs = [...websiteLogs, ...githubLogs]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id)
+    .slice(0, 100);
+
+  response.render("logs", {
+    sites,
+    githubTargets,
+    selectedSite,
+    selectedGithub,
+    logs,
+  });
+});
+
+app.post("/github-targets", (request, response) => {
+  try {
+    const parsed = parseGitHubTarget(request.body.target);
+    const nickname = String(request.body.nickname || parsed.targetKey)
+      .trim()
+      .slice(0, 40);
+    const result = statements.addGithubTarget.run(
+      parsed.targetKey,
+      parsed.kind,
+      parsed.owner,
+      parsed.repo,
+      nickname || parsed.targetKey
+    );
+    scanGitHubTarget(Number(result.lastInsertRowid));
+    response.redirect("/?message=GitHub target added. Building its baseline now.");
+  } catch (error) {
+    const message = String(error.message).includes("UNIQUE constraint failed")
+      ? "That GitHub target is already being monitored."
+      : error.message;
+    response.redirect(`/?error=${encodeURIComponent(message)}`);
+  }
+});
+
+app.post("/github-targets/:id/toggle", (request, response) => {
+  statements.toggleGithubTarget.run(Number(request.params.id));
+  response.redirect("/?message=GitHub target status updated.");
+});
+
+app.post("/github-targets/:id/scan", (request, response) => {
+  scanGitHubTarget(Number(request.params.id));
+  response.redirect("/?message=GitHub check started.");
+});
+
+app.post("/github-targets/:id/delete", (request, response) => {
+  statements.deleteGithubTarget.run(Number(request.params.id));
+  response.redirect("/?message=GitHub target removed.");
 });
 
 app.post("/sites", (request, response) => {
@@ -141,4 +220,5 @@ app.use((request, response) => response.status(404).send("Not found"));
 app.listen(port, "0.0.0.0", () => {
   console.log(`PagePulse listening on http://localhost:${port}`);
   startScanner();
+  startGithubScanner();
 });

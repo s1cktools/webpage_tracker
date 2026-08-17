@@ -158,6 +158,8 @@ section {
   background: var(--red);
 }
 
+.embed.github::before { background: #6e40c9; }
+
 .embed-author {
   margin-bottom: 7px;
   color: #f2f3f5;
@@ -177,6 +179,12 @@ section {
   font-size: 13px;
   overflow-wrap: anywhere;
   text-decoration: none;
+}
+
+.embed-detail {
+  margin-top: 8px;
+  color: #b5bac1;
+  font-size: 13px;
 }
 
 .message-content {

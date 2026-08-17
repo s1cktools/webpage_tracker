@@ -45,11 +45,52 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS github_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_key TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL CHECK(kind IN ('repo', 'user')),
+    owner TEXT NOT NULL,
+    repo TEXT,
+    nickname TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    baselined INTEGER NOT NULL DEFAULT 0,
+    etag TEXT,
+    last_checked_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS github_seen_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL REFERENCES github_targets(id) ON DELETE CASCADE,
+    external_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('commit', 'repository')),
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    is_baseline INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(target_id, external_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS github_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL REFERENCES github_targets(id) ON DELETE CASCADE,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS discovered_urls_site_seen
     ON discovered_urls(site_id, first_seen_at DESC);
 
   CREATE INDEX IF NOT EXISTS scan_logs_site_created
     ON scan_logs(site_id, id DESC);
+
+  CREATE INDEX IF NOT EXISTS github_seen_target
+    ON github_seen_items(target_id, id DESC);
+
+  CREATE INDEX IF NOT EXISTS github_logs_target
+    ON github_logs(target_id, id DESC);
 `);
 
 const urlColumns = db.prepare("PRAGMA table_info(discovered_urls)").all();
@@ -136,6 +177,79 @@ const statements = {
     ORDER BY scan_logs.id DESC
     LIMIT ?
   `),
+  listGithubTargets: db.prepare(`
+    SELECT github_targets.*,
+      (SELECT COUNT(*) FROM github_seen_items WHERE target_id = github_targets.id) AS item_count
+    FROM github_targets
+    ORDER BY created_at DESC
+  `),
+  getGithubTarget: db.prepare("SELECT * FROM github_targets WHERE id = ?"),
+  addGithubTarget: db.prepare(`
+    INSERT INTO github_targets (target_key, kind, owner, repo, nickname)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  toggleGithubTarget: db.prepare(`
+    UPDATE github_targets
+    SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END
+    WHERE id = ?
+  `),
+  deleteGithubTarget: db.prepare("DELETE FROM github_targets WHERE id = ?"),
+  activeGithubTargets: db.prepare(`
+    SELECT * FROM github_targets WHERE enabled = 1 ORDER BY id
+  `),
+  markGithubBaselined: db.prepare(`
+    UPDATE github_targets SET baselined = 1 WHERE id = ?
+  `),
+  markGithubSuccess: db.prepare(`
+    UPDATE github_targets
+    SET etag = COALESCE(?, etag),
+        last_checked_at = CURRENT_TIMESTAMP,
+        last_error = NULL
+    WHERE id = ?
+  `),
+  markGithubError: db.prepare(`
+    UPDATE github_targets
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    WHERE id = ?
+  `),
+  insertGithubItem: db.prepare(`
+    INSERT OR IGNORE INTO github_seen_items
+      (target_id, external_id, kind, title, url, is_baseline)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  recentGithubItems: db.prepare(`
+    SELECT github_seen_items.*, github_targets.owner, github_targets.repo,
+      COALESCE(github_targets.nickname, github_targets.target_key) AS target_name
+    FROM github_seen_items
+    JOIN github_targets ON github_targets.id = github_seen_items.target_id
+    WHERE github_seen_items.is_baseline = 0
+    ORDER BY github_seen_items.id DESC
+    LIMIT ?
+  `),
+  insertGithubLog: db.prepare(`
+    INSERT INTO github_logs (target_id, level, message) VALUES (?, ?, ?)
+  `),
+  trimGithubLogs: db.prepare(`
+    DELETE FROM github_logs
+    WHERE id NOT IN (SELECT id FROM github_logs ORDER BY id DESC LIMIT 200)
+  `),
+  globalGithubLogs: db.prepare(`
+    SELECT github_logs.*, github_targets.target_key,
+      COALESCE(github_targets.nickname, github_targets.target_key) AS target_name
+    FROM github_logs
+    JOIN github_targets ON github_targets.id = github_logs.target_id
+    ORDER BY github_logs.id DESC
+    LIMIT ?
+  `),
+  targetGithubLogs: db.prepare(`
+    SELECT github_logs.*, github_targets.target_key,
+      COALESCE(github_targets.nickname, github_targets.target_key) AS target_name
+    FROM github_logs
+    JOIN github_targets ON github_targets.id = github_logs.target_id
+    WHERE github_logs.target_id = ?
+    ORDER BY github_logs.id DESC
+    LIMIT ?
+  `),
 };
 
 function getSetting(key) {
@@ -178,6 +292,34 @@ function pruneDiscoveredUrls(siteId, shouldDelete) {
   return removed.length;
 }
 
+function addGithubItems(targetId, items, isBaseline = false) {
+  const inserted = [];
+  db.exec("BEGIN");
+  try {
+    for (const item of items) {
+      const result = statements.insertGithubItem.run(
+        targetId,
+        item.externalId,
+        item.kind,
+        item.title,
+        item.url,
+        isBaseline ? 1 : 0
+      );
+      if (result.changes) inserted.push(item);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return inserted;
+}
+
+function addGithubLog(targetId, level, message) {
+  statements.insertGithubLog.run(targetId, level, String(message).slice(0, 500));
+  statements.trimGithubLogs.run();
+}
+
 module.exports = {
   db,
   statements,
@@ -185,4 +327,6 @@ module.exports = {
   addDiscoveredUrls,
   addLog,
   pruneDiscoveredUrls,
+  addGithubItems,
+  addGithubLog,
 };

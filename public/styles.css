@@ -182,6 +182,43 @@ button:hover { color: var(--red); }
   border-bottom: 1px solid var(--line);
 }
 
+.github-command {
+  margin-top: 64px;
+  margin-bottom: 28px;
+}
+
+.github-summary { border-bottom: 1px solid var(--line); }
+.github-watchlist { border-top: 0; border-radius: 0; }
+
+.github-header,
+.github-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) 55px 70px 55px minmax(140px, .8fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.github-header {
+  min-height: 35px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.github-row {
+  min-height: 57px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.github-row:last-child { border-bottom: 0; }
+.github-row:hover { background: var(--surface); }
+.github-row time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .block { min-width: 0; }
 .watchlist { border-right: 1px solid var(--line); }
 
@@ -340,4 +377,12 @@ button:hover { color: var(--red); }
   .site-row > .state, .site-row > time, .site-row > span:nth-child(3) { display: none; }
   .actions { grid-column: 2; grid-row: 1; }
   .runtime i, .runtime i + * { display: none; }
+  .github-header { display: none; }
+  .github-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 12px;
+    padding: 13px 12px;
+  }
+  .github-row > span, .github-row > time { display: none; }
+  .github-row .actions { grid-column: 2; grid-row: 1; }
 }

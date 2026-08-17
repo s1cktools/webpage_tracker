@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildDiscordPayload } = require("../src/discord");
+const { buildDiscordPayload, buildGitHubPayload } = require("../src/discord");
 
 const site = {
   hostname: "openai.com",
@@ -43,4 +43,23 @@ test("uses fetched titles for new page labels", () => {
 
   assert.equal(payload.embeds[0].title, "Introducing GPT-6");
   assert.equal(payload.embeds[0].footer.text, "NEW PAGE · sitemap · 3821ms");
+});
+
+test("builds GitHub commit embeds", () => {
+  const payload = buildGitHubPayload(
+    { kind: "repo", owner: "openai", repo: "codex" },
+    [{
+      kind: "commit",
+      title: "Add repository monitoring",
+      url: "https://github.com/openai/codex/commit/abc123",
+      author: "octocat",
+    }],
+    42,
+    now
+  );
+
+  assert.equal(payload.embeds[0].author.name, "github.com/openai/codex");
+  assert.equal(payload.embeds[0].title, "Add repository monitoring");
+  assert.match(payload.embeds[0].description, /by octocat/);
+  assert.equal(payload.embeds[0].footer.text, "NEW COMMIT · github · 42ms");
 });

@@ -1,4 +1,5 @@
 const EMBED_RED = 0xef4444;
+const GITHUB_PURPLE = 0x6e40c9;
 const MAX_VISIBLE_URLS = 10;
 
 function displayUrl(rawUrl, siteHostname) {
@@ -55,4 +56,41 @@ function buildDiscordPayload(
   };
 }
 
-module.exports = { buildDiscordPayload, displayUrl, fallbackTitle };
+function buildGitHubPayload(target, items, scanDurationMs, now = new Date()) {
+  const shown = items.slice(0, MAX_VISIBLE_URLS);
+  const extra = items.length - shown.length;
+  const targetName =
+    target.kind === "repo"
+      ? `github.com/${target.owner}/${target.repo}`
+      : `github.com/${target.owner}`;
+
+  return {
+    username: "the watcher",
+    allowed_mentions: { parse: [] },
+    content: extra > 0 ? `+${extra} more GitHub updates were discovered.` : undefined,
+    embeds: shown.map((item) => {
+      const details =
+        item.kind === "commit" && item.author
+          ? `${item.url}\n\nby ${item.author}`
+          : [item.url, item.description].filter(Boolean).join("\n\n");
+      return {
+        color: GITHUB_PURPLE,
+        author: { name: targetName },
+        title: item.title,
+        url: item.url,
+        description: details,
+        footer: {
+          text: `${item.kind === "commit" ? "NEW COMMIT" : "NEW REPO"} · github · ${scanDurationMs}ms`,
+        },
+        timestamp: now.toISOString(),
+      };
+    }),
+  };
+}
+
+module.exports = {
+  buildDiscordPayload,
+  buildGitHubPayload,
+  displayUrl,
+  fallbackTitle,
+};

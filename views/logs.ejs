@@ -18,15 +18,22 @@
       <section class="heading">
         <div>
           <span class="kicker">RUNTIME</span>
-          <h1><%= selectedSite ? (selectedSite.nickname || selectedSite.hostname) : "global" %>.log</h1>
+          <h1><%= selectedSite
+            ? (selectedSite.nickname || selectedSite.hostname)
+            : selectedGithub
+              ? (selectedGithub.nickname || selectedGithub.target_key)
+              : "global" %>.log</h1>
         </div>
         <span><%= logs.length %> entries</span>
       </section>
 
       <nav>
-        <a class="<%= selectedSite ? '' : 'active' %>" href="/logs">global</a>
+        <a class="<%= selectedSite || selectedGithub ? '' : 'active' %>" href="/logs">global</a>
         <% sites.forEach((site) => { %>
           <a class="<%= selectedSite?.id === site.id ? 'active' : '' %>" href="/logs?site=<%= site.id %>"><%= site.nickname || site.hostname %></a>
+        <% }) %>
+        <% githubTargets.forEach((target) => { %>
+          <a class="<%= selectedGithub?.id === target.id ? 'active' : '' %>" href="/logs?github=<%= target.id %>">gh:<%= target.nickname || target.target_key %></a>
         <% }) %>
       </nav>
 
@@ -46,7 +53,7 @@
           <article>
             <time datetime="<%= log.created_at %>"><%= log.created_at %></time>
             <span class="level <%= log.level %>"><%= log.level %></span>
-            <a href="/logs?site=<%= log.site_id %>"><%= log.nickname %></a>
+            <a href="<%= log.targetUrl %>"><%= log.targetName %></a>
             <p><%= log.message %></p>
           </article>
         <% }) %>
