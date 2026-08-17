@@ -13,6 +13,10 @@ app.set("views", path.join(__dirname, "..", "views"));
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, "..", "public")));
 
+app.get("/health", (request, response) => {
+  response.status(200).send("ok");
+});
+
 if (process.env.DASHBOARD_PASSWORD) {
   app.use((request, response, next) => {
     const [scheme, encoded = ""] = (request.headers.authorization || "").split(" ");
