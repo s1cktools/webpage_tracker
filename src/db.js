@@ -19,6 +19,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     url TEXT NOT NULL UNIQUE,
     hostname TEXT NOT NULL,
+    nickname TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     baselined INTEGER NOT NULL DEFAULT 0,
     last_scanned_at TEXT,
@@ -44,6 +45,11 @@ if (!urlColumns.some((column) => column.name === "is_baseline")) {
   db.exec("ALTER TABLE discovered_urls ADD COLUMN is_baseline INTEGER NOT NULL DEFAULT 0");
 }
 
+const siteColumns = db.prepare("PRAGMA table_info(sites)").all();
+if (!siteColumns.some((column) => column.name === "nickname")) {
+  db.exec("ALTER TABLE sites ADD COLUMN nickname TEXT");
+}
+
 const statements = {
   getSetting: db.prepare("SELECT value FROM settings WHERE key = ?"),
   setSetting: db.prepare(`
@@ -57,7 +63,7 @@ const statements = {
     ORDER BY created_at DESC
   `),
   getSite: db.prepare("SELECT * FROM sites WHERE id = ?"),
-  addSite: db.prepare("INSERT INTO sites (url, hostname) VALUES (?, ?)"),
+  addSite: db.prepare("INSERT INTO sites (url, hostname, nickname) VALUES (?, ?, ?)"),
   toggleSite: db.prepare(`
     UPDATE sites SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id = ?
   `),

@@ -1,5 +1,6 @@
 const { addDiscoveredUrls, getSetting, statements } = require("./db");
 const { discoverSite } = require("./discovery");
+const { buildDiscordPayload } = require("./discord");
 
 const POLL_INTERVAL_MS = 5_000;
 const scanning = new Set();
@@ -8,19 +9,10 @@ async function sendDiscordAlert(site, urls) {
   const webhookUrl = getSetting("discord_webhook_url");
   if (!webhookUrl || urls.length === 0) return;
 
-  const shown = urls.slice(0, 15);
-  const extra = urls.length - shown.length;
-  const lines = shown.map((url) => `• ${url}`);
-  if (extra > 0) lines.push(`• …and ${extra} more`);
-
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      username: "PagePulse",
-      content: `🔎 **${urls.length} new URL${urls.length === 1 ? "" : "s"} on ${site.hostname}**\n${lines.join("\n")}`,
-      allowed_mentions: { parse: [] },
-    }),
+    body: JSON.stringify(buildDiscordPayload(site, urls)),
     signal: AbortSignal.timeout(10_000),
   });
 

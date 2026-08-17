@@ -41,11 +41,18 @@ app.get("/", (request, response) => {
   });
 });
 
+app.get("/preview", (request, response) => {
+  response.render("preview");
+});
+
 app.post("/sites", (request, response) => {
   try {
     const url = normalizeSiteUrl(request.body.url);
     const hostname = new URL(url).hostname;
-    const result = statements.addSite.run(url, hostname);
+    const nickname = String(request.body.nickname || hostname)
+      .trim()
+      .slice(0, 40);
+    const result = statements.addSite.run(url, hostname, nickname || hostname);
     scanSite(Number(result.lastInsertRowid));
     response.redirect("/?message=Site added. Building its baseline now.");
   } catch (error) {

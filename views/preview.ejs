@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Message preview — PagePulse</title>
+    <link rel="stylesheet" href="/preview.css">
+  </head>
+  <body>
+    <header>
+      <a href="/">← dashboard</a>
+      <span>discord / message preview</span>
+    </header>
+
+    <main>
+      <div class="intro">
+        <div>
+          <span class="label">PROPOSED EMBEDS</span>
+          <h1>notification states</h1>
+        </div>
+        <p>Static previews. Nothing here sends to Discord.</p>
+      </div>
+
+      <section>
+        <div class="section-label">
+          <span>01</span>
+          <div>
+            <h2>single page</h2>
+            <p>One URL found in a scan.</p>
+          </div>
+        </div>
+        <div class="discord">
+          <article class="message">
+            <div class="avatar">P</div>
+            <div class="message-body">
+              <div class="author">PagePulse <span>APP</span> <time>Today at 5:20 PM</time></div>
+              <div class="embed">
+                <div class="embed-title">New OpenAI Page Detected</div>
+                <a class="embed-link" href="#">openai.com/research/gpt-6</a>
+                <footer><span class="mini-logo">P</span> PagePulse · openai.com · just now</footer>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-label">
+          <span>02</span>
+          <div>
+            <h2>batch</h2>
+            <p>Several URLs from one domain.</p>
+          </div>
+        </div>
+        <div class="discord">
+          <article class="message">
+            <div class="avatar">P</div>
+            <div class="message-body">
+              <div class="author">PagePulse <span>APP</span> <time>Today at 5:21 PM</time></div>
+              <div class="embed">
+                <div class="embed-title">3 New OpenAI Pages Detected</div>
+                <div class="url-list">
+                  <a href="#"><b>01</b><span>/introducing-gpt-6</span></a>
+                  <a href="#"><b>02</b><span>/research/gpt-6-system-card</span></a>
+                  <a href="#"><b>03</b><span>/docs/models/gpt-6</span></a>
+                </div>
+                <footer><span class="mini-logo">P</span> PagePulse · openai.com · just now</footer>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-label">
+          <span>03</span>
+          <div>
+            <h2>large batch</h2>
+            <p>The list is capped instead of flooding the channel.</p>
+          </div>
+        </div>
+        <div class="discord">
+          <article class="message">
+            <div class="avatar">P</div>
+            <div class="message-body">
+              <div class="author">PagePulse <span>APP</span> <time>Today at 5:22 PM</time></div>
+              <div class="embed">
+                <div class="embed-title">24 New OpenAI Docs Pages Detected</div>
+                <div class="url-list compact">
+                  <a href="#"><b>01</b><span>/models/gpt-6</span></a>
+                  <a href="#"><b>02</b><span>/models/gpt-6-mini</span></a>
+                  <a href="#"><b>03</b><span>/guides/reasoning</span></a>
+                  <a href="#"><b>04</b><span>/guides/tools</span></a>
+                  <a href="#"><b>05</b><span>/changelog/2026-08-17</span></a>
+                </div>
+                <div class="overflow">+19 more URLs</div>
+                <footer><span class="mini-logo">P</span> PagePulse · docs.openai.com · just now</footer>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
