@@ -44,7 +44,10 @@ seconds. It silently saves the current OTA release as a baseline, then alerts on
 each new update ID. When the launch bundle changes, it compares extracted API
 hosts, app routes, UI text hints, and asset keys. The current runtime is
 discovered automatically from Google Play every ten minutes. The optional
-`PUMP_RUNTIME_VERSION` variable exists only as an emergency override.
+`PUMP_RUNTIME_VERSION` variable exists only as an emergency override. Each
+saved update has a readable `/pump/updates/:updateId` detail page. Railway
+builds event links automatically; set `WEBPAGE_TRACKER_PUBLIC_URL` when using
+another host.
 
 ## Event stream
 

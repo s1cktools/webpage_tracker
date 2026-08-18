@@ -152,6 +152,7 @@ Every event has exactly four top-level fields:
   "published_at": "2026-08-17T23:49:34.228Z",
   "launch_asset_hash": "4zbqmpERQTjG20lBSRY5CGciQlTOuS4L7Nkm0lvKMKo",
   "manifest_url": "https://u.expo.dev/660d9cc8-3cc2-4269-8845-7be9bbed752b",
+  "url": "https://webtracker.up.railway.app/pump/updates/01a01221-6794-7e53-9ab1-84ae764a6768",
   "change_count": 2,
   "changes_truncated": false,
   "changes": [
@@ -171,7 +172,8 @@ Every event has exactly four top-level fields:
 
 Pump change categories are `host`, `route`, `text`, and `asset`. The event
 contains at most 200 changes; use `change_count` and `changes_truncated` to
-detect a capped payload.
+detect a capped payload. `url` opens the saved, human-readable change list;
+`manifest_url` is the underlying Expo API endpoint.
 
 There is no replay. Events emitted while the data server is disconnected are
 not sent later.

@@ -10,6 +10,14 @@ function createEvent(eventType, data, detectedAt = new Date()) {
   };
 }
 
+function getPublicBaseUrl() {
+  const configured = String(process.env.WEBPAGE_TRACKER_PUBLIC_URL || "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const railwayDomain = String(process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+  if (railwayDomain) return `https://${railwayDomain.replace(/\/+$/, "")}`;
+  return `http://localhost:${Number(process.env.PORT) || 3000}`;
+}
+
 function buildWebsitePageEvent(site, url, title, discoverySource, detectedAt) {
   return createEvent(
     "website_page",
@@ -91,6 +99,7 @@ function buildPumpAppUpdateEvent(update, detectedAt) {
       launch_asset_hash: update.launchHash,
       manifest_url:
         "https://u.expo.dev/660d9cc8-3cc2-4269-8845-7be9bbed752b",
+      url: `${getPublicBaseUrl()}/pump/updates/${encodeURIComponent(update.updateId)}`,
       change_count: update.changes.length,
       changes_truncated: shownChanges.length < update.changes.length,
       changes: shownChanges.map((change) => ({

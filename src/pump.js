@@ -7,11 +7,34 @@ const PUMP_PLAY_STORE_URL =
 const PUMP_CHANNEL = "mainnet";
 const PUMP_PLATFORM = "android";
 const PUMP_DEFAULT_RUNTIME_VERSION = "26.0.0";
-const REQUEST_TIMEOUT_MS = 15_000;
-const BUNDLE_TIMEOUT_MS = 45_000;
+const PLAY_STORE_TIMEOUT_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+const BUNDLE_TIMEOUT_MS = 180_000;
 const MAX_SIGNAL_ITEMS = 5_000;
 const RUNTIME_CACHE_MS = 10 * 60_000;
 let runtimeCache = null;
+
+function isTimeoutError(error) {
+  return (
+    error?.name === "TimeoutError" ||
+    error?.name === "AbortError" ||
+    /aborted due to timeout/i.test(error?.message || "")
+  );
+}
+
+async function pumpFetch(url, options, timeoutMs, label) {
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw error;
+  }
+}
 
 function pumpRuntimeVersion() {
   return process.env.PUMP_RUNTIME_VERSION || PUMP_DEFAULT_RUNTIME_VERSION;
@@ -30,10 +53,12 @@ async function resolvePumpRuntimeVersion() {
   if (runtimeCache && runtimeCache.expiresAt > Date.now()) return runtimeCache.value;
 
   try {
-    const response = await fetch(PUMP_PLAY_STORE_URL, {
-      headers: { "user-agent": "Mozilla/5.0 the-watcher/1.0" },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    const response = await pumpFetch(
+      PUMP_PLAY_STORE_URL,
+      { headers: { "user-agent": "Mozilla/5.0 the-watcher/1.0" } },
+      PLAY_STORE_TIMEOUT_MS,
+      "Google Play"
+    );
     if (!response.ok) throw new Error(`Google Play returned ${response.status}`);
     const value = parsePlayStoreVersion(await response.text());
     runtimeCache = { value, expiresAt: Date.now() + RUNTIME_CACHE_MS };
@@ -86,10 +111,12 @@ async function fetchPumpUpdate({
   if (updateId) headers["expo-current-update-id"] = updateId;
   if (etag) headers["if-none-match"] = etag;
 
-  const response = await fetch(PUMP_UPDATE_URL, {
-    headers,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  const response = await pumpFetch(
+    PUMP_UPDATE_URL,
+    { headers },
+    REQUEST_TIMEOUT_MS,
+    "Pump update feed"
+  );
   if (response.status === 204 || response.status === 304) {
     return { unchanged: true, updateId, etag };
   }
@@ -123,10 +150,12 @@ async function fetchPumpBundle(manifest, extensions = {}) {
   const headers = { "user-agent": "the-watcher/1.0" };
   if (authorization) headers.authorization = authorization;
 
-  const response = await fetch(manifest.launchAsset.url, {
-    headers,
-    signal: AbortSignal.timeout(BUNDLE_TIMEOUT_MS),
-  });
+  const response = await pumpFetch(
+    manifest.launchAsset.url,
+    { headers },
+    BUNDLE_TIMEOUT_MS,
+    "Pump launch bundle"
+  );
   if (!response.ok) {
     throw new Error(`Pump bundle returned ${response.status}`);
   }
@@ -213,12 +242,15 @@ function bundleSha256(buffer) {
 }
 
 module.exports = {
+  BUNDLE_TIMEOUT_MS,
+  PLAY_STORE_TIMEOUT_MS,
   PUMP_CHANNEL,
   PUMP_DEFAULT_RUNTIME_VERSION,
   PUMP_PLATFORM,
   PUMP_PLAY_STORE_URL,
   PUMP_PROJECT_ID,
   PUMP_UPDATE_URL,
+  REQUEST_TIMEOUT_MS,
   bundleSha256,
   diffPumpSignals,
   extractBundleSignals,

@@ -365,7 +365,9 @@ const statements = {
   `),
   markPumpError: db.prepare(`
     UPDATE pump_app_state
-    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    SET last_checked_at = CURRENT_TIMESTAMP,
+        last_error = ?,
+        runtime_version = COALESCE(?, runtime_version)
     WHERE id = 1
   `),
   insertPumpUpdate: db.prepare(`
@@ -376,6 +378,9 @@ const statements = {
   `),
   recentPumpUpdates: db.prepare(`
     SELECT * FROM pump_app_updates ORDER BY detected_at DESC LIMIT ?
+  `),
+  getPumpUpdate: db.prepare(`
+    SELECT * FROM pump_app_updates WHERE update_id = ?
   `),
   countPumpUpdates: db.prepare(`
     SELECT COUNT(*) AS count FROM pump_app_updates

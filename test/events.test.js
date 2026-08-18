@@ -120,6 +120,7 @@ test("builds a bounded snake_case Pump app update event", () => {
   assert.equal(event.data.package_name, "com.batonresearch.pump");
   assert.equal(event.data.runtime_version, "26.0.0");
   assert.equal(event.data.previous_update_id, "old-update");
+  assert.match(event.data.url, /\/pump\/updates\/new-update$/);
   assert.equal(event.data.change_count, 1);
   assert.deepEqual(event.data.changes[0], {
     change_type: "added",

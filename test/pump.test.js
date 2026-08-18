@@ -84,6 +84,24 @@ test("uses Expo update ID and ETag for cheap unchanged checks", async (context) 
   assert.equal(requestHeaders["expo-channel-name"], "mainnet");
 });
 
+test("labels Expo and launch-bundle timeouts", async (context) => {
+  const timeout = Object.assign(new Error("The operation was aborted due to timeout"), {
+    name: "TimeoutError",
+  });
+  context.mock.method(global, "fetch", async () => {
+    throw timeout;
+  });
+
+  await assert.rejects(
+    () => fetchPumpUpdate({ runtimeVersion: "26.0.0" }),
+    /Pump update feed timed out after 30s/
+  );
+  await assert.rejects(
+    () => fetchPumpBundle(manifest, extensions),
+    /Pump launch bundle timed out after 180s/
+  );
+});
+
 test("fetches changed manifests and authorized launch bundles", async (context) => {
   const calls = [];
   context.mock.method(global, "fetch", async (url, options) => {

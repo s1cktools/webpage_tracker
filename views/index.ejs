@@ -294,7 +294,9 @@
 
         <% recentPumpUpdates.forEach((update) => { %>
           <article class="pump-row">
-            <code title="<%= update.update_id %>"><%= update.update_id.slice(0, 12) %></code>
+            <a href="/pump/updates/<%= encodeURIComponent(update.update_id) %>">
+              <code title="<%= update.update_id %>"><%= update.update_id.slice(0, 12) %></code>
+            </a>
             <b><%= update.runtime_version %></b>
             <span><%= update.change_count %></span>
             <time datetime="<%= update.published_at || '' %>"><%= update.published_at || "—" %></time>

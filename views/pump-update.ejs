@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pump app update <%= update.update_id.slice(0, 8) %> · PagePulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">page<span>pulse</span></a>
+      <div class="runtime">pump.fun app update</div>
+    </header>
+
+    <main class="shell pump-detail">
+      <section class="command">
+        <div>
+          <span class="kicker">PUMP.FUN · ANDROID · OTA</span>
+          <h1>runtime <%= update.runtime_version %></h1>
+        </div>
+        <a
+          class="detail-source"
+          href="https://play.google.com/store/apps/details?id=com.batonresearch.pump"
+          target="_blank"
+          rel="noopener noreferrer"
+        >play store ↗</a>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= update.change_count %></b> changes</span>
+        <span><b><%= update.update_id.slice(0, 12) %></b> update</span>
+        <span><b><%= update.previous_update_id ? update.previous_update_id.slice(0, 12) : "—" %></b> previous</span>
+        <span><b><%= update.published_at || "—" %></b> published</span>
+      </section>
+
+      <section class="block pump-change-list">
+        <% if (!changes.length) { %>
+          <div class="empty">bundle changed · no readable signals changed</div>
+        <% } %>
+        <% changes.forEach((change) => { %>
+          <article class="pump-change">
+            <span class="change-type <%= change.type %>"><%= change.type %></span>
+            <span class="pump-category"><%= change.category %></span>
+            <code><%= change.value %></code>
+          </article>
+        <% }) %>
+      </section>
+    </main>
+  </body>
+</html>

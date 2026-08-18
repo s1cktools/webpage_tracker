@@ -55,9 +55,10 @@ async function scanPumpApp(force = false) {
   scanning = true;
   const startedAt = Date.now();
   const previous = statements.getPumpState.get();
+  let configuredRuntime = previous.runtime_version || null;
 
   try {
-    const configuredRuntime = await resolvePumpRuntimeVersion();
+    configuredRuntime = await resolvePumpRuntimeVersion();
     const sameRuntime = previous.runtime_version === configuredRuntime;
     const result = await fetchPumpUpdate({
       updateId: sameRuntime ? previous.update_id : null,
@@ -120,7 +121,10 @@ async function scanPumpApp(force = false) {
       `[pump-app] ${manifest.id}: ${changes.length} extracted signal changes`
     );
   } catch (error) {
-    statements.markPumpError.run(String(error.message).slice(0, 500));
+    statements.markPumpError.run(
+      String(error.message).slice(0, 500),
+      configuredRuntime
+    );
     console.error("[pump-app]", error.message);
   } finally {
     scanning = false;

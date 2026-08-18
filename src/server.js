@@ -37,6 +37,20 @@ app.get("/health", (request, response) => {
   response.status(200).send("ok");
 });
 
+app.get("/pump/updates/:updateId", (request, response) => {
+  const update = statements.getPumpUpdate.get(request.params.updateId);
+  if (!update) return response.status(404).send("Pump app update not found.");
+
+  let changes = [];
+  try {
+    changes = JSON.parse(update.changes_json);
+  } catch {
+    return response.status(500).send("Saved Pump app update is invalid.");
+  }
+
+  return response.render("pump-update", { update, changes });
+});
+
 if (process.env.DASHBOARD_PASSWORD) {
   app.use((request, response, next) => {
     const [scheme, encoded = ""] = (request.headers.authorization || "").split(" ");
