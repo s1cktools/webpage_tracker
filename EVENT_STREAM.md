@@ -138,20 +138,40 @@ Every event has exactly four top-level fields:
 }
 ```
 
-### `ansem_coin`
+### `pump_app_update`
 
 ```json
 {
-  "name": "New Coin",
-  "ticker": "COIN",
-  "slug": "new-coin",
-  "contract_address": "SolanaMintAddress",
-  "creator_wallet": "CreatorWalletAddress",
-  "status": "on_curve",
-  "created_at": "2026-08-17T16:32:51.349Z",
-  "url": "https://ansem.io/"
+  "app_name": "pump.fun",
+  "package_name": "com.batonresearch.pump",
+  "platform": "android",
+  "channel": "mainnet",
+  "runtime_version": "26.0.0",
+  "update_id": "01a01221-6794-7e53-9ab1-84ae764a6768",
+  "previous_update_id": "02ff4dc0-d5e7-4ad3-b925-a9bd4b70000d",
+  "published_at": "2026-08-17T23:49:34.228Z",
+  "launch_asset_hash": "4zbqmpERQTjG20lBSRY5CGciQlTOuS4L7Nkm0lvKMKo",
+  "manifest_url": "https://u.expo.dev/660d9cc8-3cc2-4269-8845-7be9bbed752b",
+  "change_count": 2,
+  "changes_truncated": false,
+  "changes": [
+    {
+      "change_type": "added",
+      "category": "host",
+      "value": "advanced-api-v2.pump.fun"
+    },
+    {
+      "change_type": "added",
+      "category": "route",
+      "value": "/bounty/create"
+    }
+  ]
 }
 ```
+
+Pump change categories are `host`, `route`, `text`, and `asset`. The event
+contains at most 200 changes; use `change_count` and `changes_truncated` to
+detect a capped payload.
 
 There is no replay. Events emitted while the data server is disconnected are
 not sent later.

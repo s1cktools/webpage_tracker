@@ -249,6 +249,59 @@
           </article>
         <% }) %>
       </section>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">WATCH</span>
+          <h1>pump.app</h1>
+        </div>
+        <div class="binance-controls">
+          <form method="post" action="/pump/scan">
+            <button>scan</button>
+          </form>
+          <form method="post" action="/pump/toggle">
+            <button><%= pumpEnabled ? "pause" : "resume" %></button>
+          </form>
+        </div>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= pumpState.runtime_version || "discovering" %></b> runtime</span>
+        <span><b><%= pumpUpdateCount %></b> updates</span>
+        <span><b><%= pumpState.update_id ? pumpState.update_id.slice(0, 8) : "—" %></b> current</span>
+        <span><b><%= pumpPollSeconds %>s</b> poll</span>
+        <span class="state <%= pumpEnabled ? '' : 'idle' %>"><%= pumpEnabled ? "running" : "paused" %></span>
+      </section>
+
+      <% if (pumpState.last_error) { %>
+        <section class="binance-errors">
+          <span title="<%= pumpState.last_error %>"><b>pump.app</b> · <%= pumpState.last_error %></span>
+        </section>
+      <% } %>
+
+      <section class="block pump-updates">
+        <header class="pump-header">
+          <span>update</span>
+          <span>runtime</span>
+          <span>changes</span>
+          <span>published</span>
+          <span>detected</span>
+        </header>
+
+        <% if (!recentPumpUpdates.length) { %>
+          <div class="empty">baseline only · no app updates detected</div>
+        <% } %>
+
+        <% recentPumpUpdates.forEach((update) => { %>
+          <article class="pump-row">
+            <code title="<%= update.update_id %>"><%= update.update_id.slice(0, 12) %></code>
+            <b><%= update.runtime_version %></b>
+            <span><%= update.change_count %></span>
+            <time datetime="<%= update.published_at || '' %>"><%= update.published_at || "—" %></time>
+            <time datetime="<%= update.detected_at %>"><%= update.detected_at %></time>
+          </article>
+        <% }) %>
+      </section>
     </main>
   </body>
 </html>

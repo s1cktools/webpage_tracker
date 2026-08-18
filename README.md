@@ -30,26 +30,27 @@ reports that a rate limit has been reached.
 
 ## Binance UI monitoring
 
-The built-in Binance monitor checks the discovered English UI translation
-namespaces every five seconds. It uses ETags, silently saves the first JSON
-snapshot, then compares individual keys and values. Discord alerts summarize
-added, modified, and removed UI strings and include a limited set of changed
-lines. The dashboard can pause the monitor, trigger a manual check, and display
-recent changes or endpoint errors.
+The built-in Binance monitor checks 39 English web UI translation namespaces
+and the native app's 27,000+ string XML bundle every five seconds. It uses
+ETags, silently saves the first snapshot, then compares individual keys and
+values. Discord alerts summarize added, modified, and removed UI strings and
+include a limited set of changed lines. The dashboard can pause the monitor,
+trigger a manual check, and display recent changes or endpoint errors.
 
-## Ansem coin monitoring
+## Pump app monitoring
 
-The built-in Ansem monitor polls `https://ansem.io/api/coins` every second.
-Its first successful response is stored silently as a baseline. Each newly
-observed mint then triggers the configured Discord webhook and an `ansem_coin`
-stream event containing the complete contract address. Set
-`ANSEM_POLL_INTERVAL_MS` to override the interval (minimum 250ms).
+The Pump monitor checks the Android `mainnet` Expo update channel every five
+seconds. It silently saves the current OTA release as a baseline, then alerts on
+each new update ID. When the launch bundle changes, it compares extracted API
+hosts, app routes, UI text hints, and asset keys. The current runtime is
+discovered automatically from Google Play every ten minutes. The optional
+`PUMP_RUNTIME_VERSION` variable exists only as an emergency override.
 
 ## Event stream
 
 Set `EVENT_STREAM_TOKEN` to expose an authenticated Socket.IO namespace at
 `/events` on the app's existing URL. Every post-baseline website, GitHub, or
-Binance discovery is broadcast as `tracker_event` in this minimal shape:
+Binance or Pump discovery is broadcast as `tracker_event` in this minimal shape:
 
 ```json
 {
@@ -61,7 +62,8 @@ Binance discovery is broadcast as `tracker_event` in this minimal shape:
 ```
 
 The supported event types are `website_page`, `github_commit`,
-`github_repository`, `binance_ui`, and `ansem_coin`. A data server can subscribe with:
+`github_repository`, `binance_ui`, and `pump_app_update`. A data server can
+subscribe with:
 
 ```js
 import { io } from "socket.io-client";

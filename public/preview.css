@@ -160,6 +160,7 @@ section {
 
 .embed.github::before { background: #6e40c9; }
 .embed.binance::before { background: #2ebd85; }
+.embed.pump::before { background: #86efac; }
 
 .embed-author {
   margin-bottom: 7px;

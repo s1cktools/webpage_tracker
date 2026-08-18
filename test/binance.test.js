@@ -1,9 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  BINANCE_APP_NAMESPACE,
+  BINANCE_APP_URL,
   BINANCE_UI_NAMESPACES,
   diffObjects,
   fetchBinanceNamespace,
+  parseAndroidStrings,
 } = require("../src/binance");
 const {
   buildBinancePayload,
@@ -14,8 +17,11 @@ test("includes the discovered Binance UI namespaces", () => {
   assert.ok(BINANCE_UI_NAMESPACES.includes("activity-ui"));
   assert.ok(BINANCE_UI_NAMESPACES.includes("stock_landing_page"));
   assert.ok(BINANCE_UI_NAMESPACES.includes("growth-game-ui"));
+  assert.ok(BINANCE_UI_NAMESPACES.includes("MPC-wallet"));
+  assert.ok(BINANCE_UI_NAMESPACES.includes("trade-ui"));
+  assert.ok(BINANCE_UI_NAMESPACES.includes(BINANCE_APP_NAMESPACE));
   assert.equal(new Set(BINANCE_UI_NAMESPACES).size, BINANCE_UI_NAMESPACES.length);
-  assert.equal(BINANCE_UI_NAMESPACES.length, 31);
+  assert.equal(BINANCE_UI_NAMESPACES.length, 40);
 });
 
 test("diffs added, changed and removed UI values", () => {
@@ -47,6 +53,43 @@ test("uses Binance ETags for unchanged checks", async (context) => {
   const result = await fetchBinanceNamespace("activity-ui", '"saved"');
   assert.equal(headers["if-none-match"], '"saved"');
   assert.equal(result.unchanged, true);
+});
+
+test("parses and fetches the native Binance app translations", async (context) => {
+  let requestedUrl;
+  let headers;
+  context.mock.method(global, "fetch", async (url, options) => {
+    requestedUrl = url;
+    headers = options.headers;
+    return new Response(
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<resources>",
+        '  <string name="content_coin_label_guide_title">Reply stands out!</string>',
+        '  <string name="escaped">Trade &amp; Earn</string>',
+        "</resources>",
+      ].join("\n"),
+      { status: 200, headers: { etag: '"native-etag"' } }
+    );
+  });
+
+  const result = await fetchBinanceNamespace(BINANCE_APP_NAMESPACE);
+  assert.equal(requestedUrl, BINANCE_APP_URL);
+  assert.equal(headers.accept, "application/xml");
+  assert.equal(result.etag, '"native-etag"');
+  assert.deepEqual(result.data, {
+    content_coin_label_guide_title: "Reply stands out!",
+    escaped: "Trade & Earn",
+  });
+});
+
+test("parses multiline Android string resources", () => {
+  assert.deepEqual(
+    parseAndroidStrings(
+      '<resources><string name="body">First line\nSecond line</string></resources>'
+    ),
+    { body: "First line\nSecond line" }
+  );
 });
 
 test("builds concise Binance UI Discord summaries", () => {

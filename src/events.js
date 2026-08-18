@@ -1,5 +1,5 @@
 const { randomUUID } = require("node:crypto");
-const { BINANCE_UI_BASE } = require("./binance");
+const { getBinanceNamespaceUrl } = require("./binance");
 
 function createEvent(eventType, data, detectedAt = new Date()) {
   return {
@@ -60,7 +60,7 @@ function buildBinanceUiEvent(namespace, changes, detectedAt) {
     {
       namespace,
       locale: "en",
-      url: `${BINANCE_UI_BASE}/${encodeURIComponent(namespace)}`,
+      url: getBinanceNamespaceUrl(namespace),
       changes: changes.map((change) => {
         const output = {
           change_type: change.type,
@@ -75,27 +75,38 @@ function buildBinanceUiEvent(namespace, changes, detectedAt) {
   );
 }
 
-function buildAnsemCoinEvent(coin, detectedAt = new Date()) {
+function buildPumpAppUpdateEvent(update, detectedAt) {
+  const shownChanges = update.changes.slice(0, 200);
   return createEvent(
-    "ansem_coin",
+    "pump_app_update",
     {
-      name: coin.name,
-      ticker: coin.ticker,
-      slug: coin.slug,
-      contract_address: coin.mint,
-      creator_wallet: coin.creatorWallet,
-      status: coin.status,
-      created_at: coin.createdAt,
-      url: "https://ansem.io/",
+      app_name: "pump.fun",
+      package_name: "com.batonresearch.pump",
+      platform: "android",
+      channel: "mainnet",
+      runtime_version: update.runtimeVersion,
+      update_id: update.updateId,
+      previous_update_id: update.previousUpdateId || null,
+      published_at: update.publishedAt,
+      launch_asset_hash: update.launchHash,
+      manifest_url:
+        "https://u.expo.dev/660d9cc8-3cc2-4269-8845-7be9bbed752b",
+      change_count: update.changes.length,
+      changes_truncated: shownChanges.length < update.changes.length,
+      changes: shownChanges.map((change) => ({
+        change_type: change.type,
+        category: change.category,
+        value: change.value,
+      })),
     },
     detectedAt
   );
 }
 
 module.exports = {
-  buildAnsemCoinEvent,
   buildBinanceUiEvent,
   buildGithubEvent,
+  buildPumpAppUpdateEvent,
   buildWebsitePageEvent,
   createEvent,
 };

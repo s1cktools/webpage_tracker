@@ -1,9 +1,11 @@
+const { getBinanceNamespaceUrl } = require("./binance");
+
 const EMBED_RED = 0xef4444;
 const GITHUB_PURPLE = 0x6e40c9;
 const BINANCE_GREEN = 0x2ebd85;
 const BINANCE_AMBER = 0xf0b90b;
 const BINANCE_RED = 0xef4444;
-const ANSEM_GOLD = 0xf5c542;
+const PUMP_GREEN = 0x86efac;
 const MAX_VISIBLE_URLS = 10;
 
 function displayUrl(rawUrl, siteHostname) {
@@ -140,7 +142,7 @@ function buildBinancePayload(events, scanDurationMs, now = new Date()) {
         color,
         author: { name: "binance.com UI" },
         title: `${event.namespace} updated`,
-        url: `https://bin.bnbstatic.com/api/i18n/-/web/cms/en/${encodeURIComponent(event.namespace)}`,
+        url: getBinanceNamespaceUrl(event.namespace),
         description: formatBinanceChanges(event.changes),
         footer: {
           text: `BINANCE UI · i18n · ${scanDurationMs}ms`,
@@ -151,35 +153,80 @@ function buildBinancePayload(events, scanDurationMs, now = new Date()) {
   };
 }
 
-function buildAnsemPayload(coins, scanDurationMs, now = new Date()) {
+function formatPumpValue(value, limit = 100) {
+  const text = String(value || "")
+    .replace(/`/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function buildPumpPayload(update, scanDurationMs, now = new Date()) {
+  const grouped = {
+    added: { asset: [], host: [], route: [], text: [] },
+    removed: { asset: [], host: [], route: [], text: [] },
+  };
+  for (const change of update.changes) {
+    grouped[change.type]?.[change.category]?.push(change.value);
+  }
+
+  const sections = [];
+  const addSection = (title, values, limit = 8) => {
+    if (!values.length) return;
+    const shown = values.slice(0, limit).map((value) => `+ ${formatPumpValue(value)}`);
+    if (values.length > shown.length) shown.push(`… ${values.length - shown.length} more`);
+    sections.push(`**${title}**\n\`\`\`diff\n${shown.join("\n")}\n\`\`\``);
+  };
+  addSection("New endpoints", grouped.added.host);
+  addSection("New routes", grouped.added.route);
+  addSection("New UI text", grouped.added.text, 6);
+
+  const addedAssets = grouped.added.asset.length;
+  const removedAssets = grouped.removed.asset.length;
+  const removedSignals =
+    grouped.removed.host.length +
+    grouped.removed.route.length +
+    grouped.removed.text.length;
+  const summary = [
+    `${update.changes.length} extracted changes`,
+    `${addedAssets} assets added`,
+    `${removedAssets} assets removed`,
+    `${removedSignals} readable signals removed`,
+  ].join(" · ");
+  if (!sections.length) {
+    sections.push("Bundle changed; no new readable endpoint, route, or UI text was extracted.");
+  }
+
   return {
     username: "the watcher",
     allowed_mentions: { parse: [] },
-    embeds: coins.slice(0, MAX_VISIBLE_URLS).map((coin) => ({
-      color: ANSEM_GOLD,
-      author: { name: "ansem.io" },
-      title: `${coin.name}${coin.ticker ? ` ($${coin.ticker})` : ""}`,
-      url: "https://ansem.io/",
-      description: [
-        "**Contract address**",
-        `\`${coin.mint}\``,
-        coin.creatorWallet ? `**Creator**\n\`${coin.creatorWallet}\`` : null,
-        coin.status ? `**Status:** ${coin.status}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      thumbnail: coin.imageUrl ? { url: coin.imageUrl } : undefined,
-      footer: { text: `NEW ANSEM COIN · API · ${scanDurationMs}ms` },
-      timestamp: now.toISOString(),
-    })),
+    embeds: [
+      {
+        color: PUMP_GREEN,
+        author: { name: "pump.fun app" },
+        title: `New app update · ${update.runtimeVersion}`,
+        url: "https://u.expo.dev/660d9cc8-3cc2-4269-8845-7be9bbed752b",
+        description: `${summary}\n\n${sections.join("\n").slice(0, 3500)}`,
+        fields: [
+          { name: "Update", value: update.updateId, inline: false },
+          {
+            name: "Published",
+            value: update.publishedAt || "unknown",
+            inline: false,
+          },
+        ],
+        footer: { text: `PUMP APP · expo · ${scanDurationMs}ms` },
+        timestamp: now.toISOString(),
+      },
+    ],
   };
 }
 
 module.exports = {
-  buildAnsemPayload,
   buildDiscordPayload,
   buildGitHubPayload,
   buildBinancePayload,
+  buildPumpPayload,
   displayUrl,
   fallbackTitle,
   formatBinanceChanges,

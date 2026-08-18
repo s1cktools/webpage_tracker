@@ -3,7 +3,6 @@ const http = require("node:http");
 const path = require("node:path");
 const express = require("express");
 const { getSetting, pruneDiscoveredUrls, statements } = require("./db");
-const { startAnsemScanner } = require("./ansem-scanner");
 const {
   BINANCE_POLL_INTERVAL_MS,
   isBinanceEnabled,
@@ -18,6 +17,12 @@ const {
   scanGitHubTarget,
   startGithubScanner,
 } = require("./github-scanner");
+const {
+  PUMP_POLL_INTERVAL_MS,
+  isPumpEnabled,
+  scanPumpApp,
+  startPumpScanner,
+} = require("./pump-scanner");
 const { POLL_INTERVAL_MS, scanSite, startScanner } = require("./scanner");
 
 const app = express();
@@ -59,11 +64,16 @@ app.get("/", (request, response) => {
     recentBinanceChanges: statements.recentBinanceChanges.all(30),
     binanceChangeCount: statements.countBinanceChanges.get().count,
     binanceEnabled: isBinanceEnabled(),
+    pumpState: statements.getPumpState.get(),
+    recentPumpUpdates: statements.recentPumpUpdates.all(10),
+    pumpUpdateCount: statements.countPumpUpdates.get().count,
+    pumpEnabled: isPumpEnabled(),
     webhookConfigured: Boolean(webhook),
     githubConfigured: Boolean(process.env.GITHUB_TOKEN),
     pollSeconds: POLL_INTERVAL_MS / 1000,
     githubPollSeconds: GITHUB_POLL_INTERVAL_MS / 1000,
     binancePollSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
+    pumpPollSeconds: PUMP_POLL_INTERVAL_MS / 1000,
     message: request.query.message || "",
     error: request.query.error || "",
   });
@@ -241,6 +251,18 @@ app.post("/binance/scan", (request, response) => {
   response.redirect("/?message=Binance UI check started.");
 });
 
+app.post("/pump/toggle", (request, response) => {
+  const enabled = !isPumpEnabled();
+  statements.setSetting.run("pump_app_enabled", enabled ? "1" : "0");
+  if (enabled) scanPumpApp();
+  response.redirect(`/?message=Pump app monitor ${enabled ? "resumed" : "paused"}.`);
+});
+
+app.post("/pump/scan", (request, response) => {
+  scanPumpApp(true);
+  response.redirect("/?message=Pump app check started.");
+});
+
 app.use((request, response) => response.status(404).send("Not found"));
 
 const httpServer = http.createServer(app);
@@ -251,5 +273,5 @@ httpServer.listen(port, "0.0.0.0", () => {
   startScanner();
   startGithubScanner();
   startBinanceScanner();
-  startAnsemScanner();
+  startPumpScanner();
 });

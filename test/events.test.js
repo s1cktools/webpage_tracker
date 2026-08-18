@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   buildBinanceUiEvent,
   buildGithubEvent,
+  buildPumpAppUpdateEvent,
   buildWebsitePageEvent,
 } = require("../src/events");
 
@@ -98,4 +99,31 @@ test("builds a snake_case Binance UI event", () => {
     new_value: "New title",
   });
   assert.equal(event.data.locale, "en");
+});
+
+test("builds a bounded snake_case Pump app update event", () => {
+  const event = buildPumpAppUpdateEvent(
+    {
+      updateId: "new-update",
+      previousUpdateId: "old-update",
+      runtimeVersion: "26.0.0",
+      publishedAt: "2026-08-18T08:00:00.000Z",
+      launchHash: "launch-hash",
+      changes: [
+        { type: "added", category: "route", value: "/bounty/create" },
+      ],
+    },
+    detectedAt
+  );
+
+  assertEnvelope(event, "pump_app_update");
+  assert.equal(event.data.package_name, "com.batonresearch.pump");
+  assert.equal(event.data.runtime_version, "26.0.0");
+  assert.equal(event.data.previous_update_id, "old-update");
+  assert.equal(event.data.change_count, 1);
+  assert.deepEqual(event.data.changes[0], {
+    change_type: "added",
+    category: "route",
+    value: "/bounty/create",
+  });
 });

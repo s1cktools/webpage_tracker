@@ -99,15 +99,29 @@ db.exec(`
     detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
-  CREATE TABLE IF NOT EXISTS ansem_coins (
-    mint TEXT PRIMARY KEY,
-    slug TEXT,
-    name TEXT NOT NULL,
-    ticker TEXT,
-    creator_wallet TEXT,
-    created_at TEXT,
-    is_baseline INTEGER NOT NULL DEFAULT 0,
-    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  CREATE TABLE IF NOT EXISTS pump_app_state (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    runtime_version TEXT,
+    update_id TEXT,
+    etag TEXT,
+    launch_hash TEXT,
+    bundle_hash TEXT,
+    signals_json TEXT NOT NULL DEFAULT '{}',
+    baselined INTEGER NOT NULL DEFAULT 0,
+    published_at TEXT,
+    last_checked_at TEXT,
+    last_error TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS pump_app_updates (
+    update_id TEXT PRIMARY KEY,
+    runtime_version TEXT NOT NULL,
+    previous_update_id TEXT,
+    published_at TEXT,
+    launch_hash TEXT NOT NULL,
+    change_count INTEGER NOT NULL,
+    changes_json TEXT NOT NULL,
+    detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE INDEX IF NOT EXISTS discovered_urls_site_seen
@@ -124,6 +138,9 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS binance_ui_changes_detected
     ON binance_ui_changes(id DESC);
+
+  CREATE INDEX IF NOT EXISTS pump_app_updates_detected
+    ON pump_app_updates(detected_at DESC);
 `);
 
 const urlColumns = db.prepare("PRAGMA table_info(discovered_urls)").all();
@@ -323,13 +340,55 @@ const statements = {
   countBinanceChanges: db.prepare(`
     SELECT COUNT(*) AS count FROM binance_ui_changes
   `),
-  countAnsemCoins: db.prepare("SELECT COUNT(*) AS count FROM ansem_coins"),
-  insertAnsemCoin: db.prepare(`
-    INSERT OR IGNORE INTO ansem_coins
-      (mint, slug, name, ticker, creator_wallet, created_at, is_baseline)
+  ensurePumpState: db.prepare(`
+    INSERT OR IGNORE INTO pump_app_state (id) VALUES (1)
+  `),
+  getPumpState: db.prepare("SELECT * FROM pump_app_state WHERE id = 1"),
+  markPumpUnchanged: db.prepare(`
+    UPDATE pump_app_state
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = NULL
+    WHERE id = 1
+  `),
+  savePumpState: db.prepare(`
+    UPDATE pump_app_state
+    SET runtime_version = ?,
+        update_id = ?,
+        etag = ?,
+        launch_hash = ?,
+        bundle_hash = ?,
+        signals_json = ?,
+        baselined = 1,
+        published_at = ?,
+        last_checked_at = CURRENT_TIMESTAMP,
+        last_error = NULL
+    WHERE id = 1
+  `),
+  markPumpError: db.prepare(`
+    UPDATE pump_app_state
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    WHERE id = 1
+  `),
+  insertPumpUpdate: db.prepare(`
+    INSERT OR IGNORE INTO pump_app_updates
+      (update_id, runtime_version, previous_update_id, published_at,
+       launch_hash, change_count, changes_json)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `),
+  recentPumpUpdates: db.prepare(`
+    SELECT * FROM pump_app_updates ORDER BY detected_at DESC LIMIT ?
+  `),
+  countPumpUpdates: db.prepare(`
+    SELECT COUNT(*) AS count FROM pump_app_updates
+  `),
+  trimPumpUpdates: db.prepare(`
+    DELETE FROM pump_app_updates
+    WHERE update_id NOT IN (
+      SELECT update_id FROM pump_app_updates ORDER BY detected_at DESC LIMIT 50
+    )
+  `),
 };
+
+statements.ensurePumpState.run();
 
 function getSetting(key) {
   return statements.getSetting.get(key)?.value || "";
@@ -419,28 +478,35 @@ function addBinanceChanges(namespace, changes) {
   }
 }
 
-function addAnsemCoins(coins, isBaseline = false) {
-  const inserted = [];
+function savePumpUpdate(state, update) {
   db.exec("BEGIN");
   try {
-    for (const coin of coins) {
-      const result = statements.insertAnsemCoin.run(
-        coin.mint,
-        coin.slug || null,
-        coin.name,
-        coin.ticker || null,
-        coin.creatorWallet || null,
-        coin.createdAt || null,
-        isBaseline ? 1 : 0
+    statements.savePumpState.run(
+      state.runtimeVersion,
+      state.updateId,
+      state.etag,
+      state.launchHash,
+      state.bundleHash,
+      JSON.stringify(state.signals),
+      state.publishedAt
+    );
+    if (update) {
+      statements.insertPumpUpdate.run(
+        update.updateId,
+        update.runtimeVersion,
+        update.previousUpdateId,
+        update.publishedAt,
+        update.launchHash,
+        update.changes.length,
+        JSON.stringify(update.changes)
       );
-      if (result.changes) inserted.push(coin);
+      statements.trimPumpUpdates.run();
     }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
-  return inserted;
 }
 
 module.exports = {
@@ -453,5 +519,5 @@ module.exports = {
   addGithubItems,
   addGithubLog,
   addBinanceChanges,
-  addAnsemCoins,
+  savePumpUpdate,
 };
