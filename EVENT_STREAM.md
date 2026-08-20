@@ -91,7 +91,7 @@ Every event has exactly four top-level fields:
   "website_name": "SpaceX",
   "root_hostname": "spacex.com",
   "hostname": "auth.spacex.com",
-  "discovery_source": "certstream",
+  "discovery_source": "certspotter",
   "dns_status": "unchecked",
   "wildcard_observation": false
 }
@@ -100,6 +100,9 @@ Every event has exactly four top-level fields:
 The event is emitted immediately after the certificate hostname is first seen.
 DNS resolution runs afterward, so live events normally report `unchecked`; the
 dashboard record is later updated to `resolved`, `unresolved`, or `unknown`.
+`certspotter` means the app discovered the hostname by directly monitoring the
+browser-recognized RFC 6962 and static CT logs. Historical baseline discoveries
+use `crt.sh` and are not emitted as live events.
 
 ### `github_commit`
 

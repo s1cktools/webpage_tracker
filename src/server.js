@@ -12,7 +12,13 @@ const {
 const { getBinanceNamespaceUrl } = require("./binance");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { attachEventStream } = require("./event-stream");
-const { getCtStatus, scanCtSite, startCtScanner } = require("./ct-scanner");
+const {
+  getCtStatus,
+  refreshCertspotterWatchlist,
+  scanCtSite,
+  startCtScanner,
+  stopCertspotterManager,
+} = require("./ct-scanner");
 const { parseGitHubTarget } = require("./github");
 const {
   GITHUB_POLL_INTERVAL_MS,
@@ -225,6 +231,7 @@ app.post("/sites", (request, response) => {
     const result = statements.addSite.run(url, hostname, nickname || hostname);
     scanSite(Number(result.lastInsertRowid));
     scanCtSite(Number(result.lastInsertRowid));
+    refreshCertspotterWatchlist();
     response.redirect("/?message=Site added. Building its baseline now.");
   } catch (error) {
     const message =
@@ -237,6 +244,7 @@ app.post("/sites", (request, response) => {
 
 app.post("/sites/:id/toggle", (request, response) => {
   statements.toggleSite.run(Number(request.params.id));
+  refreshCertspotterWatchlist();
   response.redirect("/?message=Site status updated.");
 });
 
@@ -265,6 +273,7 @@ app.post("/sites/:id/scan", (request, response) => {
 
 app.post("/sites/:id/delete", (request, response) => {
   statements.deleteSite.run(Number(request.params.id));
+  refreshCertspotterWatchlist();
   response.redirect("/?message=Site removed.");
 });
 
@@ -331,3 +340,22 @@ httpServer.listen(port, "0.0.0.0", () => {
   startBinanceScanner();
   startPumpScanner();
 });
+
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  httpServer.close();
+  const forceExit = setTimeout(() => process.exit(1), 14_000);
+  try {
+    await stopCertspotterManager();
+    clearTimeout(forceExit);
+    process.exit(0);
+  } catch (error) {
+    console.error("[shutdown]", error.message);
+    process.exit(1);
+  }
+}
+
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);

@@ -54,7 +54,7 @@ test("builds a certificate subdomain event", () => {
     { nickname: "SpaceX", hostname: "spacex.com" },
     {
       hostname: "auth.spacex.com",
-      source: "certstream",
+      source: "certspotter",
       dnsStatus: "unchecked",
       wildcard: false,
     },
@@ -71,7 +71,7 @@ test("builds a certificate subdomain event", () => {
     summary: "3 new subdomains discovered for spacex.com",
     report_url: "https://tracker.example/reports/subdomains",
     item_count: 3,
-    discovery_source: "certstream",
+    discovery_source: "certspotter",
     dns_status: "unchecked",
     wildcard_observation: false,
   });

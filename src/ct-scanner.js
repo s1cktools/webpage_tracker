@@ -1,4 +1,3 @@
-const WebSocket = require("ws");
 const {
   addDiscoveredSubdomains,
   addLog,
@@ -6,12 +5,17 @@ const {
   statements,
 } = require("./db");
 const {
-  CERTSTREAM_URL,
   fetchCrtShNames,
   isSubdomainOf,
-  parseCertstreamMessage,
+  normalizeCtName,
   resolveDnsStatus,
 } = require("./ct");
+const {
+  getCertspotterManagerStatus,
+  refreshCertspotterWatchlist: refreshManagedWatchlist,
+  startCertspotterManager,
+  stopCertspotterManager,
+} = require("./certspotter-manager");
 const { buildSubdomainPayload } = require("./discord");
 const { buildWebsiteSubdomainEvent } = require("./events");
 const { emitTrackerEvent } = require("./event-stream");
@@ -19,15 +23,7 @@ const { saveSubdomainsReport } = require("./reports");
 
 const CT_SWEEP_INTERVAL_MS = 6 * 60 * 60_000;
 const CRT_REQUEST_GAP_MS = 13_000;
-const STALE_STREAM_MS = 2 * 60_000;
-const MAX_RECONNECT_MS = 60_000;
 
-let socket;
-let reconnectTimer;
-let staleTimer;
-let reconnectAttempt = 0;
-let outageStartedAt = Date.now();
-let lastMessageAt = 0;
 let processing = Promise.resolve();
 let crtQueue = Promise.resolve();
 let nextCrtRequestAt = 0;
@@ -40,13 +36,14 @@ const ctStatus = {
   connected: false,
   lastMessageAt: null,
   lastError: null,
+  source: "certspotter",
 };
 
 const delay = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function getCtStatus() {
-  return { ...ctStatus };
+  return { ...ctStatus, monitor: getCertspotterManagerStatus() };
 }
 
 function queueCrtRequest(task) {
@@ -91,6 +88,20 @@ function getActiveSitesCached() {
   return activeSitesCache;
 }
 
+function refreshCertspotterWatchlist() {
+  activeSitesCachedAt = 0;
+  activeSitesCache = [];
+  return refreshManagedWatchlist();
+}
+
+function safeAddLog(siteId, level, message) {
+  try {
+    addLog(siteId, level, message);
+  } catch (error) {
+    console.error(`[ct] could not save ${level} log:`, error.message);
+  }
+}
+
 async function sendDiscordAlert(site, entries, startedAt, reportUrl) {
   const webhookUrl = getSetting("discord_webhook_url");
   if (!webhookUrl || !entries.length) return;
@@ -129,24 +140,33 @@ async function processCtEntries(siteOrId, entries, source, options = {}) {
 
   if (site.ct_baselined && !options.forceBaseline) {
     const detectedAt = new Date();
-    const report = saveSubdomainsReport(site, inserted);
-    for (const entry of inserted) {
-      emitTrackerEvent(
-        buildWebsiteSubdomainEvent(
-          site,
-          entry,
-          detectedAt,
-          report.url,
-          inserted.length
-        )
-      );
+    let reportUrl = null;
+    try {
+      reportUrl = saveSubdomainsReport(site, inserted).url;
+    } catch (error) {
+      safeAddLog(site.id, "error", `CT report failed: ${error.message}`);
     }
     try {
-      await sendDiscordAlert(site, inserted, startedAt, report.url);
+      for (const entry of inserted) {
+        emitTrackerEvent(
+          buildWebsiteSubdomainEvent(
+            site,
+            entry,
+            detectedAt,
+            reportUrl,
+            inserted.length
+          )
+        );
+      }
     } catch (error) {
-      addLog(site.id, "error", `CT Discord alert failed: ${error.message}`);
+      safeAddLog(site.id, "error", `CT event stream failed: ${error.message}`);
     }
-    addLog(
+    try {
+      await sendDiscordAlert(site, inserted, startedAt, reportUrl);
+    } catch (error) {
+      safeAddLog(site.id, "error", `CT Discord alert failed: ${error.message}`);
+    }
+    safeAddLog(
       site.id,
       "new",
       `${inserted.length} new certificate subdomain${inserted.length === 1 ? "" : "s"}`
@@ -214,11 +234,10 @@ function runCtSweep() {
   });
 }
 
-function handleStreamMessage(rawMessage) {
-  const entries = parseCertstreamMessage(rawMessage);
-  if (!entries.length) return;
-  lastMessageAt = Date.now();
-  ctStatus.lastMessageAt = new Date(lastMessageAt).toISOString();
+function processLiveNames(names) {
+  const entries = names.map(normalizeCtName).filter(Boolean);
+  ctStatus.lastMessageAt = new Date().toISOString();
+  if (!entries.length) return Promise.resolve();
   const sites = getActiveSitesCached();
   const matches = sites
     .map((site) => ({
@@ -228,78 +247,59 @@ function handleStreamMessage(rawMessage) {
       ),
     }))
     .filter((group) => group.entries.length);
-  if (!matches.length) return;
-  processing = processing
+  if (!matches.length) return Promise.resolve();
+  const run = processing
     .catch(() => {})
     .then(async () => {
       for (const group of matches) {
-        await processCtEntries(group.site, group.entries, "certstream");
+        await processCtEntries(group.site, group.entries, "certspotter");
       }
-    })
-    .catch((error) => {
+    });
+  processing = run.catch((error) => {
       ctStatus.lastError = error.message;
       console.error("[ct] stream processing:", error.message);
     });
+  return run;
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer) return;
-  ctStatus.connected = false;
-  const base = Math.min(MAX_RECONNECT_MS, 1_000 * 2 ** reconnectAttempt++);
-  const wait = Math.round(base * (0.75 + Math.random() * 0.5));
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectCertstream();
-  }, wait);
-  reconnectTimer.unref();
-}
-
-function connectCertstream() {
-  if (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState)) return;
-  socket = new WebSocket(CERTSTREAM_URL, {
-    handshakeTimeout: 15_000,
-    perMessageDeflate: false,
-  });
-  socket.on("open", () => {
-    const outageMs = outageStartedAt ? Date.now() - outageStartedAt : 0;
-    outageStartedAt = null;
-    reconnectAttempt = 0;
-    lastMessageAt = Date.now();
-    ctStatus.connected = true;
-    ctStatus.lastError = null;
-    if (outageMs > STALE_STREAM_MS) runCtSweep();
-  });
-  socket.on("message", handleStreamMessage);
-  socket.on("error", (error) => {
-    ctStatus.lastError = error.message;
-  });
-  socket.on("close", () => {
-    if (!outageStartedAt) outageStartedAt = Date.now();
-    ctStatus.connected = false;
-    scheduleReconnect();
-  });
+async function handleCertspotterEvent(event) {
+  if (event.event === "discovered_cert") {
+    await processLiveNames(event.dns_names);
+    return;
+  }
+  const message = event.detail || event.summary || "Cert Spotter monitoring error";
+  ctStatus.lastError = String(message).slice(0, 1000);
+  console.error(`[ct] ${ctStatus.lastError}`);
+  runCtSweep();
 }
 
 function startCtScanner() {
-  connectCertstream();
   runCtSweep();
   const sweepTimer = setInterval(runCtSweep, CT_SWEEP_INTERVAL_MS);
   sweepTimer.unref();
-  staleTimer = setInterval(() => {
-    if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > STALE_STREAM_MS) {
-      ctStatus.lastError = "Certificate stream became stale";
-      outageStartedAt = lastMessageAt || Date.now() - STALE_STREAM_MS;
-      socket.terminate();
-    }
-  }, 30_000);
-  staleTimer.unref();
+  void startCertspotterManager({
+    onEvent: handleCertspotterEvent,
+    onState(state) {
+      ctStatus.connected = state.running;
+      if (state.lastError) ctStatus.lastError = state.lastError;
+      else if (state.running) ctStatus.lastError = null;
+    },
+  }).catch((error) => {
+    ctStatus.connected = false;
+    ctStatus.lastError = error.message;
+    console.error("[ct] monitor startup:", error.message);
+  });
 }
 
 module.exports = {
   CT_SWEEP_INTERVAL_MS,
   getCtStatus,
+  handleCertspotterEvent,
   processCtEntries,
+  processLiveNames,
+  refreshCertspotterWatchlist,
   scanAllCtSites,
   scanCtSite,
   startCtScanner,
+  stopCertspotterManager,
 };

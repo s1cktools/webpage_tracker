@@ -18,7 +18,7 @@
         <i>/</i>
         github <%= githubConfigured ? "on" : "off" %>
         <i>/</i>
-        ct <%= ctStatus.connected ? "live" : "reconnecting" %>
+        <span title="<%= ctStatus.lastError || 'Cert Spotter is monitoring CT logs directly' %>">ct <%= ctStatus.connected ? "direct" : "starting" %></span>
         <i>/</i>
         <a href="/logs">logs</a>
         <i>/</i>

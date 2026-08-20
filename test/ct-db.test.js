@@ -24,7 +24,7 @@ test("stores a silent CT baseline and marks later subdomains as new", () => {
     const discovered = addDiscoveredSubdomains(
       siteId,
       [{ hostname: "auth.example.com", wildcard: false }],
-      "certstream",
+      "certspotter",
       false
     );
 
@@ -40,7 +40,7 @@ test("stores a silent CT baseline and marks later subdomains as new", () => {
       addDiscoveredSubdomains(
         siteId,
         [{ hostname: "auth.example.com", wildcard: false }],
-        "certstream"
+        "certspotter"
       ).length,
       0
     );

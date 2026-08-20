@@ -651,6 +651,7 @@ function createAlertReport(kind, title, payload) {
 }
 
 module.exports = {
+  dataDirectory,
   db,
   statements,
   getSetting,

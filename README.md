@@ -12,15 +12,25 @@ npm start
 
 Open `http://localhost:3000`, save a Discord webhook, and add a website. The
 first scan silently records existing URLs; later discoveries trigger alerts.
+The web app and periodic scanners run directly with Node. The direct
+Certificate Transparency monitor is included in the production Docker image;
+use Docker locally when testing that process end to end:
+
+```sh
+docker build -t pagepulse .
+docker run --rm -p 3000:3000 -v pagepulse-data:/data pagepulse
+```
 
 ## Certificate subdomain monitoring
 
 Every enabled website also watches Certificate Transparency for newly issued
 certificate hostnames below its tracked root. For example, a tracked
-`spacex.com` will match `auth.spacex.com`. A shared public CT stream provides
-near-real-time updates, while a rate-limited crt.sh sweep builds the initial
-silent baseline and catches stream gaps every six hours. No API key or Railway
-variable is required.
+`spacex.com` will match `auth.spacex.com`. PagePulse runs the open-source
+Cert Spotter monitor inside its container and tails the Chrome and Apple log
+lists directly, including classic RFC 6962 and modern static-ct-api logs. A
+rate-limited crt.sh sweep builds the initial silent baseline and runs every six
+hours as an independent historical cross-check. No CT API key, public relay, or
+Railway variable is required.
 
 New subdomains are stored separately from page URLs, shown on the dashboard,
 sent to Discord, and emitted as `website_subdomain` events. DNS A/AAAA
@@ -28,10 +38,16 @@ resolution is checked after discovery and saved as context; an unresolved name
 still alerts because a certificate can be logged before the host goes live.
 Wildcard-only names such as `*.example.com` are not treated as concrete hosts.
 
-The public stream has no uptime guarantee. The watcher reconnects with backoff,
-detects stale connections, and uses crt.sh as its recovery source. If crt.sh is
-temporarily unavailable, live alerts still activate after that first attempt;
-the historical baseline is filled silently when crt.sh recovers.
+Cert Spotter stores a cursor for every CT log under the same persistent data
+directory as PagePulse. It resumes and catches up after restarts without losing
+entries, reloads the browser log lists, audits append-only consistency, and
+reports lag or log failures through the dashboard. The tracked-domain watchlist
+is rebuilt whenever a site is added, paused, resumed, or removed. A daily
+Cert Spotter test certificate silently exercises the full local hook path.
+
+If crt.sh is temporarily unavailable, direct monitoring still activates after
+that first baseline attempt; the historical baseline is filled silently when
+crt.sh recovers.
 
 ## GitHub monitoring
 
@@ -110,15 +126,18 @@ event payloads.
 
 ## Railway
 
-1. Deploy this repository as a Railway service.
+1. Deploy this repository as a Railway service. Railway builds the included
+   Dockerfile, which pins Cert Spotter `v0.24.2`.
 2. Add a persistent volume mounted at `/data`.
-3. Set `DATA_DIR=/data`.
-4. Set `DASHBOARD_PASSWORD` to protect the public dashboard with HTTP Basic Auth.
-5. Set `GITHUB_TOKEN` if GitHub monitoring will be used.
-6. Generate a Railway domain for the service.
+3. Set `DASHBOARD_PASSWORD` to protect the public dashboard with HTTP Basic Auth.
+4. Set `GITHUB_TOKEN` if GitHub monitoring will be used.
+5. Generate a Railway domain for the service.
 
-The app uses Railway's `PORT` automatically. Run only one replica because the
-scanner runs inside the web process and SQLite is a single-file database.
+The image already stores data under `/data` and Railway refuses to deploy it
+without that volume. The app uses Railway's `PORT` automatically. Run only one replica because the
+scanners and Cert Spotter supervisor run inside the web process and SQLite is a
+single-file database. The volume preserves both `tracker.db` and Cert Spotter's
+per-log cursor state.
 
 ## Discovery limits
 

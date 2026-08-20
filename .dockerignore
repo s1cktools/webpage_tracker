@@ -1,0 +1,7 @@
+.git
+.cursor
+canvases
+data
+node_modules
+npm-debug.log*
+.env

@@ -1,9 +1,6 @@
 const { promises: dns } = require("node:dns");
-const { X509Certificate } = require("node:crypto");
 const { domainToASCII } = require("node:url");
 
-const CERTSTREAM_URL =
-  "wss://ctlstream.interrupt.sh/stream?filter=sans.dns_names";
 const CRT_SH_URL = "https://crt.sh/";
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_CRT_RESPONSE_BYTES = 20 * 1024 * 1024;
@@ -31,35 +28,6 @@ function isSubdomainOf(hostname, rootHostname) {
   const name = normalizeCtName(hostname)?.hostname;
   const root = normalizeCtName(rootHostname)?.hostname;
   return Boolean(name && root && name !== root && name.endsWith(`.${root}`));
-}
-
-function parseDnsSubjectAltName(value) {
-  return [...String(value || "").matchAll(/DNS:([^,\s]+)/g)].map(
-    (match) => match[1]
-  );
-}
-
-function parseCertstreamMessage(rawMessage) {
-  let message;
-  try {
-    message = JSON.parse(String(rawMessage));
-  } catch {
-    return [];
-  }
-  let names = [];
-  if (message?.message_type === "dns_entries" && Array.isArray(message.data)) {
-    names = message.data;
-  } else if (Array.isArray(message?.sans?.dns_names)) {
-    names = message.sans.dns_names;
-  } else if (typeof message?.cert_pem === "string") {
-    try {
-      const certificate = new X509Certificate(message.cert_pem);
-      names = parseDnsSubjectAltName(certificate.subjectAltName);
-    } catch {
-      return [];
-    }
-  }
-  return names.map(normalizeCtName).filter(Boolean);
 }
 
 function parseCrtShResponse(records) {
@@ -138,12 +106,9 @@ async function resolveDnsStatus(hostname) {
 }
 
 module.exports = {
-  CERTSTREAM_URL,
   fetchCrtShNames,
   isSubdomainOf,
   normalizeCtName,
-  parseCertstreamMessage,
   parseCrtShResponse,
-  parseDnsSubjectAltName,
   resolveDnsStatus,
 };

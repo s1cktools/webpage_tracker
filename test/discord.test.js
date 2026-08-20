@@ -111,7 +111,7 @@ test("builds GitHub commit embeds", () => {
 test("builds certificate subdomain embeds", () => {
   const payload = buildSubdomainPayload(
     site,
-    [{ hostname: "auth.openai.com", source: "certstream", dnsStatus: "unchecked" }],
+    [{ hostname: "auth.openai.com", source: "certspotter", dnsStatus: "unchecked" }],
     12,
     now
   );
