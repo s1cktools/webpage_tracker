@@ -1,13 +1,18 @@
 const { createAlertReport } = require("./db");
 const { getPublicBaseUrl } = require("./events");
 const { fallbackTitle } = require("./discord");
+const { getBinanceNamespaceUrl } = require("./binance");
 
 function reportUrl(id) {
   return `${getPublicBaseUrl()}/reports/${encodeURIComponent(id)}`;
 }
 
-function saveReport(kind, title, subtitle, items) {
-  const id = createAlertReport(kind, title, { subtitle, items });
+function saveReport(kind, title, subtitle, items, sourceUrl = null) {
+  const id = createAlertReport(kind, title, {
+    subtitle,
+    items,
+    ...(sourceUrl ? { sourceUrl } : {}),
+  });
   return { id, url: reportUrl(id) };
 }
 
@@ -69,7 +74,8 @@ function saveBinanceReport(event) {
       label: change.key,
       oldValue: change.oldValue,
       newValue: change.newValue,
-    }))
+    })),
+    getBinanceNamespaceUrl(event.namespace)
   );
 }
 

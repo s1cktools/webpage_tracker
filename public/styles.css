@@ -358,6 +358,7 @@ button:hover { color: var(--red); }
   text-transform: uppercase;
 }
 .detail-source:hover { color: var(--red); }
+.report-links { display: flex; align-items: center; gap: 18px; }
 .pump-change-report {
   display: grid;
   gap: 12px;

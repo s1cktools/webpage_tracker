@@ -19,7 +19,12 @@
           <span class="kicker"><%= report.kind %> · exact alert snapshot</span>
           <h1><%= report.title %></h1>
         </div>
-        <a class="detail-source" href="/reports">all reports →</a>
+        <div class="report-links">
+          <% if (payload.sourceUrl) { %>
+            <a class="detail-source" href="<%= payload.sourceUrl %>" target="_blank" rel="noopener noreferrer">open tracked source ↗</a>
+          <% } %>
+          <a class="detail-source" href="/reports">all reports →</a>
+        </div>
       </section>
 
       <section class="summary github-summary">

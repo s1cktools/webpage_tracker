@@ -9,6 +9,7 @@ const {
   scanBinanceUi,
   startBinanceScanner,
 } = require("./binance-scanner");
+const { getBinanceNamespaceUrl } = require("./binance");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { attachEventStream } = require("./event-stream");
 const { getCtStatus, scanCtSite, startCtScanner } = require("./ct-scanner");
@@ -71,6 +72,13 @@ app.get("/reports/:reportId", (request, response) => {
     payload = JSON.parse(report.payload_json);
   } catch {
     return response.status(500).send("Saved update report is invalid.");
+  }
+  if (!payload.sourceUrl && report.kind === "binance") {
+    const suffix = " · Binance UI changes";
+    const namespace = report.title.endsWith(suffix)
+      ? report.title.slice(0, -suffix.length)
+      : "";
+    if (namespace) payload.sourceUrl = getBinanceNamespaceUrl(namespace);
   }
 
   return response.render("report", { report, payload });
