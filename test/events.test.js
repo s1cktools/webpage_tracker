@@ -5,6 +5,7 @@ const {
   buildGithubEvent,
   buildPumpAppUpdateEvent,
   buildWebsitePageEvent,
+  buildWebsiteSubdomainEvent,
 } = require("../src/events");
 
 const detectedAt = new Date("2026-08-17T13:33:04.215Z");
@@ -40,6 +41,28 @@ test("builds a minimal website page event", () => {
     title: "Introducing GPT-6",
     url: "https://openai.com/gpt-6",
     discovery_source: "sitemap",
+  });
+});
+
+test("builds a certificate subdomain event", () => {
+  const event = buildWebsiteSubdomainEvent(
+    { nickname: "SpaceX", hostname: "spacex.com" },
+    {
+      hostname: "auth.spacex.com",
+      source: "certstream",
+      dnsStatus: "unchecked",
+      wildcard: false,
+    },
+    detectedAt
+  );
+  assertEnvelope(event, "website_subdomain");
+  assert.deepEqual(event.data, {
+    website_name: "SpaceX",
+    root_hostname: "spacex.com",
+    hostname: "auth.spacex.com",
+    discovery_source: "certstream",
+    dns_status: "unchecked",
+    wildcard_observation: false,
   });
 });
 

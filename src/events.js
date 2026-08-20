@@ -32,6 +32,21 @@ function buildWebsitePageEvent(site, url, title, discoverySource, detectedAt) {
   );
 }
 
+function buildWebsiteSubdomainEvent(site, entry, detectedAt = new Date()) {
+  return createEvent(
+    "website_subdomain",
+    {
+      website_name: site.nickname || site.hostname,
+      root_hostname: site.hostname,
+      hostname: entry.hostname,
+      discovery_source: entry.source || "certificate_transparency",
+      dns_status: entry.dnsStatus || "unchecked",
+      wildcard_observation: Boolean(entry.wildcard),
+    },
+    detectedAt
+  );
+}
+
 function buildGithubEvent(target, item, detectedAt = new Date()) {
   if (item.kind === "commit") {
     return createEvent(
@@ -117,5 +132,6 @@ module.exports = {
   buildGithubEvent,
   buildPumpAppUpdateEvent,
   buildWebsitePageEvent,
+  buildWebsiteSubdomainEvent,
   createEvent,
 };

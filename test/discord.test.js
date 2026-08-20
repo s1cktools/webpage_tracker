@@ -1,6 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildDiscordPayload, buildGitHubPayload } = require("../src/discord");
+const {
+  buildDiscordPayload,
+  buildGitHubPayload,
+  buildSubdomainPayload,
+} = require("../src/discord");
 
 const site = {
   hostname: "openai.com",
@@ -62,4 +66,18 @@ test("builds GitHub commit embeds", () => {
   assert.equal(payload.embeds[0].title, "Add repository monitoring");
   assert.match(payload.embeds[0].description, /by octocat/);
   assert.equal(payload.embeds[0].footer.text, "NEW COMMIT · github · 42ms");
+});
+
+test("builds certificate subdomain embeds", () => {
+  const payload = buildSubdomainPayload(
+    site,
+    [{ hostname: "auth.openai.com", source: "certstream", dnsStatus: "unchecked" }],
+    12,
+    now
+  );
+  assert.equal(payload.embeds[0].title, "auth.openai.com");
+  assert.equal(payload.embeds[0].url, "https://auth.openai.com/");
+  assert.equal(payload.embeds[0].footer.text, "NEW SUBDOMAIN");
+  assert.equal(payload.embeds[0].description, undefined);
+  assert.equal(payload.embeds[0].author, undefined);
 });

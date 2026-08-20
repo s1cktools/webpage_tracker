@@ -13,6 +13,26 @@ npm start
 Open `http://localhost:3000`, save a Discord webhook, and add a website. The
 first scan silently records existing URLs; later discoveries trigger alerts.
 
+## Certificate subdomain monitoring
+
+Every enabled website also watches Certificate Transparency for newly issued
+certificate hostnames below its tracked root. For example, a tracked
+`spacex.com` will match `auth.spacex.com`. A shared public CT stream provides
+near-real-time updates, while a rate-limited crt.sh sweep builds the initial
+silent baseline and catches stream gaps every six hours. No API key or Railway
+variable is required.
+
+New subdomains are stored separately from page URLs, shown on the dashboard,
+sent to Discord, and emitted as `website_subdomain` events. DNS A/AAAA
+resolution is checked after discovery and saved as context; an unresolved name
+still alerts because a certificate can be logged before the host goes live.
+Wildcard-only names such as `*.example.com` are not treated as concrete hosts.
+
+The public stream has no uptime guarantee. The watcher reconnects with backoff,
+detects stale connections, and uses crt.sh as its recovery source. If crt.sh is
+temporarily unavailable, live alerts still activate after that first attempt;
+the historical baseline is filled silently when crt.sh recovers.
+
 ## GitHub monitoring
 
 Set `GITHUB_TOKEN`, then add either a GitHub username or an `owner/repository`
@@ -52,8 +72,8 @@ another host.
 ## Event stream
 
 Set `EVENT_STREAM_TOKEN` to expose an authenticated Socket.IO namespace at
-`/events` on the app's existing URL. Every post-baseline website, GitHub, or
-Binance or Pump discovery is broadcast as `tracker_event` in this minimal shape:
+`/events` on the app's existing URL. Every post-baseline website page, website
+subdomain, GitHub, Binance, or Pump discovery is broadcast as `tracker_event`:
 
 ```json
 {
@@ -64,7 +84,7 @@ Binance or Pump discovery is broadcast as `tracker_event` in this minimal shape:
 }
 ```
 
-The supported event types are `website_page`, `github_commit`,
+The supported event types are `website_page`, `website_subdomain`, `github_commit`,
 `github_repository`, `binance_ui`, and `pump_app_update`. A data server can
 subscribe with:
 
@@ -104,4 +124,6 @@ scanner runs inside the web process and SQLite is a single-file database.
 
 There is no universal API listing every URL on a domain. PagePulse detects URLs
 exposed in sitemaps or linked from inspected public pages. Completely hidden or
-unlinked URLs cannot be discovered reliably.
+unlinked URLs cannot be discovered reliably. Certificate Transparency improves
+subdomain discovery but only covers hostnames included in publicly logged TLS
+certificates; it is not a complete DNS inventory.

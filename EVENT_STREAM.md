@@ -84,6 +84,23 @@ Every event has exactly four top-level fields:
 }
 ```
 
+### `website_subdomain`
+
+```json
+{
+  "website_name": "SpaceX",
+  "root_hostname": "spacex.com",
+  "hostname": "auth.spacex.com",
+  "discovery_source": "certstream",
+  "dns_status": "unchecked",
+  "wildcard_observation": false
+}
+```
+
+The event is emitted immediately after the certificate hostname is first seen.
+DNS resolution runs afterward, so live events normally report `unchecked`; the
+dashboard record is later updated to `resolved`, `unresolved`, or `unknown`.
+
 ### `github_commit`
 
 ```json

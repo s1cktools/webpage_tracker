@@ -6,6 +6,7 @@ const BINANCE_GREEN = 0x2ebd85;
 const BINANCE_AMBER = 0xf0b90b;
 const BINANCE_RED = 0xef4444;
 const PUMP_GREEN = 0x86efac;
+const CT_BLUE = 0x38bdf8;
 const MAX_VISIBLE_URLS = 10;
 
 function displayUrl(rawUrl, siteHostname) {
@@ -57,6 +58,23 @@ function buildDiscordPayload(
       footer: {
         text: `NEW PAGE · ${sources.get(url) || "discovery"} · ${scanDurationMs}ms`,
       },
+      timestamp: now.toISOString(),
+    })),
+  };
+}
+
+function buildSubdomainPayload(_site, entries, _scanDurationMs = 0, now = new Date()) {
+  const shown = entries.slice(0, MAX_VISIBLE_URLS);
+  const extra = entries.length - shown.length;
+  return {
+    username: "the watcher",
+    allowed_mentions: { parse: [] },
+    content: extra > 0 ? `+${extra} more subdomains were discovered.` : undefined,
+    embeds: shown.map((entry) => ({
+      color: CT_BLUE,
+      title: entry.hostname,
+      url: `https://${entry.hostname}/`,
+      footer: { text: "NEW SUBDOMAIN" },
       timestamp: now.toISOString(),
     })),
   };
@@ -227,6 +245,7 @@ module.exports = {
   buildGitHubPayload,
   buildBinancePayload,
   buildPumpPayload,
+  buildSubdomainPayload,
   displayUrl,
   fallbackTitle,
   formatBinanceChanges,

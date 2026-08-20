@@ -25,6 +25,10 @@ db.exec(`
     baselined INTEGER NOT NULL DEFAULT 0,
     last_scanned_at TEXT,
     last_error TEXT,
+    ct_baselined INTEGER NOT NULL DEFAULT 0,
+    ct_history_baselined INTEGER NOT NULL DEFAULT 0,
+    ct_last_checked_at TEXT,
+    ct_last_error TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -43,6 +47,18 @@ db.exec(`
     level TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS discovered_subdomains (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    hostname TEXT NOT NULL,
+    source TEXT NOT NULL,
+    wildcard_observation INTEGER NOT NULL DEFAULT 0,
+    dns_status TEXT NOT NULL DEFAULT 'unchecked',
+    is_baseline INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(site_id, hostname)
   );
 
   CREATE TABLE IF NOT EXISTS github_targets (
@@ -130,6 +146,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS scan_logs_site_created
     ON scan_logs(site_id, id DESC);
 
+  CREATE INDEX IF NOT EXISTS discovered_subdomains_site_seen
+    ON discovered_subdomains(site_id, id DESC);
+
   CREATE INDEX IF NOT EXISTS github_seen_target
     ON github_seen_items(target_id, id DESC);
 
@@ -160,6 +179,18 @@ if (!siteColumns.some((column) => column.name === "ignore_locales")) {
     WHERE hostname IN ('solana.com', 'www.solana.com', 'claude.com', 'www.claude.com')
   `);
 }
+if (!siteColumns.some((column) => column.name === "ct_baselined")) {
+  db.exec("ALTER TABLE sites ADD COLUMN ct_baselined INTEGER NOT NULL DEFAULT 0");
+}
+if (!siteColumns.some((column) => column.name === "ct_history_baselined")) {
+  db.exec("ALTER TABLE sites ADD COLUMN ct_history_baselined INTEGER NOT NULL DEFAULT 0");
+}
+if (!siteColumns.some((column) => column.name === "ct_last_checked_at")) {
+  db.exec("ALTER TABLE sites ADD COLUMN ct_last_checked_at TEXT");
+}
+if (!siteColumns.some((column) => column.name === "ct_last_error")) {
+  db.exec("ALTER TABLE sites ADD COLUMN ct_last_error TEXT");
+}
 
 const statements = {
   getSetting: db.prepare("SELECT value FROM settings WHERE key = ?"),
@@ -169,7 +200,8 @@ const statements = {
   `),
   listSites: db.prepare(`
     SELECT sites.*,
-      (SELECT COUNT(*) FROM discovered_urls WHERE site_id = sites.id) AS url_count
+      (SELECT COUNT(*) FROM discovered_urls WHERE site_id = sites.id) AS url_count,
+      (SELECT COUNT(*) FROM discovered_subdomains WHERE site_id = sites.id) AS subdomain_count
     FROM sites
     ORDER BY created_at DESC
   `),
@@ -204,6 +236,38 @@ const statements = {
     WHERE discovered_urls.is_baseline = 0
     ORDER BY discovered_urls.id DESC
     LIMIT ?
+  `),
+  insertSubdomain: db.prepare(`
+    INSERT OR IGNORE INTO discovered_subdomains
+      (site_id, hostname, source, wildcard_observation, dns_status, is_baseline)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  updateSubdomainDns: db.prepare(`
+    UPDATE discovered_subdomains SET dns_status = ? WHERE site_id = ? AND hostname = ?
+  `),
+  recentSubdomains: db.prepare(`
+    SELECT discovered_subdomains.*, sites.hostname AS root_hostname,
+      COALESCE(sites.nickname, sites.hostname) AS site_name
+    FROM discovered_subdomains
+    JOIN sites ON sites.id = discovered_subdomains.site_id
+    WHERE discovered_subdomains.is_baseline = 0
+    ORDER BY discovered_subdomains.id DESC
+    LIMIT ?
+  `),
+  markCtBaselined: db.prepare(`
+    UPDATE sites SET ct_baselined = 1, ct_history_baselined = 1,
+      ct_last_checked_at = CURRENT_TIMESTAMP,
+      ct_last_error = NULL WHERE id = ?
+  `),
+  markCtLiveAfterBaselineError: db.prepare(`
+    UPDATE sites SET ct_baselined = 1, ct_last_checked_at = CURRENT_TIMESTAMP,
+      ct_last_error = ? WHERE id = ?
+  `),
+  markCtSuccess: db.prepare(`
+    UPDATE sites SET ct_last_checked_at = CURRENT_TIMESTAMP, ct_last_error = NULL WHERE id = ?
+  `),
+  markCtError: db.prepare(`
+    UPDATE sites SET ct_last_checked_at = CURRENT_TIMESTAMP, ct_last_error = ? WHERE id = ?
   `),
   insertLog: db.prepare(`
     INSERT INTO scan_logs (site_id, level, message) VALUES (?, ?, ?)
@@ -421,6 +485,29 @@ function addLog(siteId, level, message) {
   statements.trimLogs.run();
 }
 
+function addDiscoveredSubdomains(siteId, entries, source, isBaseline = false) {
+  const inserted = [];
+  db.exec("BEGIN");
+  try {
+    for (const entry of entries) {
+      const result = statements.insertSubdomain.run(
+        siteId,
+        entry.hostname,
+        source,
+        entry.wildcard ? 1 : 0,
+        entry.dnsStatus || "unchecked",
+        isBaseline ? 1 : 0
+      );
+      if (result.changes) inserted.push({ ...entry, source });
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return inserted;
+}
+
 function pruneDiscoveredUrls(siteId, shouldDelete) {
   const urls = statements.siteUrls.all(siteId).map((row) => row.url);
   const removed = urls.filter(shouldDelete);
@@ -519,6 +606,7 @@ module.exports = {
   statements,
   getSetting,
   addDiscoveredUrls,
+  addDiscoveredSubdomains,
   addLog,
   pruneDiscoveredUrls,
   addGithubItems,

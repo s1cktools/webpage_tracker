@@ -18,6 +18,8 @@
         <i>/</i>
         github <%= githubConfigured ? "on" : "off" %>
         <i>/</i>
+        ct <%= ctStatus.connected ? "live" : "reconnecting" %>
+        <i>/</i>
         <a href="/logs">logs</a>
         <i>/</i>
         <a href="/preview">preview</a>
@@ -44,6 +46,7 @@
       <section class="summary">
         <span><b><%= sites.length %></b> sites</span>
         <span><b><%= sites.reduce((sum, site) => sum + site.url_count, 0) %></b> urls</span>
+        <span><b><%= sites.reduce((sum, site) => sum + site.subdomain_count, 0) %></b> subdomains</span>
         <span><b><%= sites.filter((site) => site.enabled).length %></b> active</span>
       </section>
 
@@ -52,7 +55,7 @@
           <header class="block-header">
             <span>target</span>
             <span>state</span>
-            <span>urls</span>
+            <span>urls / subs</span>
             <span>last scan</span>
             <span></span>
           </header>
@@ -69,10 +72,10 @@
                   <b><%= site.nickname || site.hostname %></b>
                   <small><%= site.hostname %></small>
                 </a>
-                <% if (site.last_error) { %><span class="row-error" title="<%= site.last_error %>">!</span><% } %>
+                <% if (site.last_error || site.ct_last_error) { %><span class="row-error" title="<%= site.last_error || site.ct_last_error %>">!</span><% } %>
               </div>
               <span class="state <%= site.enabled ? '' : 'idle' %>"><%= site.enabled ? "running" : "paused" %></span>
-              <span><%= site.url_count %></span>
+              <span><%= site.url_count %> / <%= site.subdomain_count %></span>
               <time datetime="<%= site.last_scanned_at || '' %>"><%= site.last_scanned_at ? site.last_scanned_at.replace("T", " ").replace(".000Z", "") : "pending" %></time>
               <div class="actions">
                 <a href="/logs?site=<%= site.id %>">logs</a>
@@ -122,6 +125,22 @@
               <a href="<%= item.url %>" target="_blank" rel="noreferrer">
                 <time><%= item.first_seen_at.slice(5, 16).replace("T", " ") %></time>
                 <span><%= item.hostname %><%= new URL(item.url).pathname %></span>
+              </a>
+            <% }) %>
+          </section>
+
+          <section class="block log">
+            <header class="section-title">
+              <span>subdomains.log</span>
+              <span><%= recentSubdomains.length %></span>
+            </header>
+            <% if (!recentSubdomains.length) { %>
+              <div class="empty"><%= ctStatus.connected ? "baseline only · no events" : "certificate stream reconnecting" %></div>
+            <% } %>
+            <% recentSubdomains.forEach((item) => { %>
+              <a href="https://<%= item.hostname %>/" target="_blank" rel="noreferrer">
+                <time><%= item.first_seen_at.slice(5, 16).replace("T", " ") %></time>
+                <span><%= item.hostname %> · <%= item.dns_status %></span>
               </a>
             <% }) %>
           </section>

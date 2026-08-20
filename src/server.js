@@ -11,6 +11,7 @@ const {
 } = require("./binance-scanner");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { attachEventStream } = require("./event-stream");
+const { getCtStatus, scanCtSite, startCtScanner } = require("./ct-scanner");
 const { parseGitHubTarget } = require("./github");
 const {
   GITHUB_POLL_INTERVAL_MS,
@@ -69,9 +70,12 @@ if (process.env.DASHBOARD_PASSWORD) {
 
 app.get("/", (request, response) => {
   const webhook = getSetting("discord_webhook_url");
+  const ctStatus = getCtStatus();
   response.render("index", {
     sites: statements.listSites.all(),
     recentUrls: statements.recentUrls.all(30),
+    recentSubdomains: statements.recentSubdomains.all(30),
+    ctStatus,
     githubTargets: statements.listGithubTargets.all(),
     recentGithubItems: statements.recentGithubItems.all(20),
     binanceNamespaces: statements.listBinanceNamespaces.all(),
@@ -186,6 +190,7 @@ app.post("/sites", (request, response) => {
       .slice(0, 40);
     const result = statements.addSite.run(url, hostname, nickname || hostname);
     scanSite(Number(result.lastInsertRowid));
+    scanCtSite(Number(result.lastInsertRowid));
     response.redirect("/?message=Site added. Building its baseline now.");
   } catch (error) {
     const message =
@@ -218,7 +223,9 @@ app.post("/sites/:id/locales", (request, response) => {
 });
 
 app.post("/sites/:id/scan", (request, response) => {
-  scanSite(Number(request.params.id));
+  const siteId = Number(request.params.id);
+  scanSite(siteId);
+  scanCtSite(siteId);
   response.redirect("/?message=Scan started.");
 });
 
@@ -285,6 +292,7 @@ attachEventStream(httpServer);
 httpServer.listen(port, "0.0.0.0", () => {
   console.log(`PagePulse listening on http://localhost:${port}`);
   startScanner();
+  startCtScanner();
   startGithubScanner();
   startBinanceScanner();
   startPumpScanner();
