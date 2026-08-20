@@ -68,7 +68,15 @@ async function scanGitHubTarget(targetOrId) {
           const detectedAt = new Date();
           const report = saveGithubReport(target, inserted);
           for (const item of inserted) {
-            emitTrackerEvent(buildGithubEvent(target, item, detectedAt));
+            emitTrackerEvent(
+              buildGithubEvent(
+                target,
+                item,
+                detectedAt,
+                report.url,
+                inserted.length
+              )
+            );
           }
           await sendGitHubAlert(target, inserted, Date.now() - startedAt, report.url);
           const noun =

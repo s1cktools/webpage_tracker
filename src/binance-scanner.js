@@ -47,9 +47,9 @@ async function scanNamespace(row) {
     if (!row.baselined || changes.length === 0) return null;
 
     addBinanceChanges(row.name, changes);
-    emitTrackerEvent(buildBinanceUiEvent(row.name, changes));
     const event = { namespace: row.name, changes };
     const report = saveBinanceReport(event);
+    emitTrackerEvent(buildBinanceUiEvent(row.name, changes, undefined, report.url));
     return { ...event, reportUrl: report.url };
   } catch (error) {
     statements.markBinanceError.run(

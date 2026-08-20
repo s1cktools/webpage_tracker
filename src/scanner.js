@@ -126,7 +126,9 @@ async function scanSite(siteOrId) {
               url,
               titles.get(url) || fallbackTitle(url),
               sources.get(url),
-              detectedAt
+              detectedAt,
+              report.url,
+              inserted.length
             )
           );
         }

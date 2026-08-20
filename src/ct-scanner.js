@@ -131,7 +131,15 @@ async function processCtEntries(siteOrId, entries, source, options = {}) {
     const detectedAt = new Date();
     const report = saveSubdomainsReport(site, inserted);
     for (const entry of inserted) {
-      emitTrackerEvent(buildWebsiteSubdomainEvent(site, entry, detectedAt));
+      emitTrackerEvent(
+        buildWebsiteSubdomainEvent(
+          site,
+          entry,
+          detectedAt,
+          report.url,
+          inserted.length
+        )
+      );
     }
     try {
       await sendDiscordAlert(site, inserted, startedAt, report.url);

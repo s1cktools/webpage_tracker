@@ -31,7 +31,9 @@ test("builds a minimal website page event", () => {
     "https://openai.com/gpt-6",
     "Introducing GPT-6",
     "sitemap",
-    detectedAt
+    detectedAt,
+    "https://tracker.example/reports/pages",
+    12
   );
 
   assertEnvelope(event, "website_page");
@@ -39,6 +41,9 @@ test("builds a minimal website page event", () => {
     website_name: "OpenAI",
     hostname: "openai.com",
     title: "Introducing GPT-6",
+    summary: "12 new pages discovered on openai.com",
+    report_url: "https://tracker.example/reports/pages",
+    item_count: 12,
     url: "https://openai.com/gpt-6",
     discovery_source: "sitemap",
   });
@@ -53,13 +58,19 @@ test("builds a certificate subdomain event", () => {
       dnsStatus: "unchecked",
       wildcard: false,
     },
-    detectedAt
+    detectedAt,
+    "https://tracker.example/reports/subdomains",
+    3
   );
   assertEnvelope(event, "website_subdomain");
   assert.deepEqual(event.data, {
     website_name: "SpaceX",
     root_hostname: "spacex.com",
     hostname: "auth.spacex.com",
+    title: "auth.spacex.com",
+    summary: "3 new subdomains discovered for spacex.com",
+    report_url: "https://tracker.example/reports/subdomains",
+    item_count: 3,
     discovery_source: "certstream",
     dns_status: "unchecked",
     wildcard_observation: false,
@@ -77,11 +88,15 @@ test("builds GitHub commit and repository events", () => {
       url: "https://github.com/openai/codex/commit/abc123",
       committedAt: "2026-08-17T13:30:00.000Z",
     },
-    detectedAt
+    detectedAt,
+    "https://tracker.example/reports/github",
+    4
   );
   assertEnvelope(commit, "github_commit");
   assert.equal(commit.data.commit_sha, "abc123");
   assert.equal(commit.data.committed_at, "2026-08-17T13:30:00.000Z");
+  assert.equal(commit.data.report_url, "https://tracker.example/reports/github");
+  assert.equal(commit.data.item_count, 4);
 
   const repository = buildGithubEvent(
     { owner: "openai", repo: null },
@@ -92,11 +107,15 @@ test("builds GitHub commit and repository events", () => {
       url: "https://github.com/openai/new-project",
       createdAt: "2026-08-17T13:31:00.000Z",
     },
-    detectedAt
+    detectedAt,
+    "https://tracker.example/reports/github-repos",
+    2
   );
   assertEnvelope(repository, "github_repository");
   assert.equal(repository.data.repository, "new-project");
   assert.equal(repository.data.created_at, "2026-08-17T13:31:00.000Z");
+  assert.equal(repository.data.title, "new-project");
+  assert.equal(repository.data.item_count, 2);
 });
 
 test("builds a snake_case Binance UI event", () => {
@@ -112,7 +131,8 @@ test("builds a snake_case Binance UI event", () => {
       },
       { type: "removed", key: "old-title", oldValue: "Old title" },
     ],
-    detectedAt
+    detectedAt,
+    "https://tracker.example/reports/binance"
   );
 
   assertEnvelope(event, "binance_ui");
@@ -122,6 +142,8 @@ test("builds a snake_case Binance UI event", () => {
     new_value: "New title",
   });
   assert.equal(event.data.locale, "en");
+  assert.equal(event.data.report_url, "https://tracker.example/reports/binance");
+  assert.equal(event.data.item_count, 3);
 });
 
 test("builds a bounded snake_case Pump app update event", () => {
@@ -144,6 +166,8 @@ test("builds a bounded snake_case Pump app update event", () => {
   assert.equal(event.data.runtime_version, "26.0.0");
   assert.equal(event.data.previous_update_id, "old-update");
   assert.match(event.data.url, /\/pump\/updates\/new-update$/);
+  assert.equal(event.data.report_url, event.data.url);
+  assert.equal(event.data.item_count, 1);
   assert.equal(event.data.change_count, 1);
   assert.deepEqual(event.data.changes[0], {
     change_type: "added",
