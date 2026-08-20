@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Update reports · PagePulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">page<span>pulse</span></a>
+      <div class="runtime">public update reports</div>
+    </header>
+
+    <main class="shell pump-detail">
+      <section class="command">
+        <div>
+          <span class="kicker">EXACT ALERT SNAPSHOTS</span>
+          <h1>update reports</h1>
+        </div>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= reports.length %></b> retained reports</span>
+      </section>
+
+      <section class="block report-list">
+        <header class="report-list-header">
+          <span>report</span>
+          <span>type</span>
+          <span>items</span>
+          <span>detected</span>
+        </header>
+        <% if (!reports.length) { %><div class="empty">no reports yet</div><% } %>
+        <% reports.forEach((report) => { %>
+          <a class="report-row" href="/reports/<%= encodeURIComponent(report.id) %>">
+            <b><%= report.title %></b>
+            <span><%= report.kind %></span>
+            <span><%= report.item_count %></span>
+            <time datetime="<%= report.created_at %>"><%= report.created_at %></time>
+          </a>
+        <% }) %>
+      </section>
+    </main>
+  </body>
+</html>

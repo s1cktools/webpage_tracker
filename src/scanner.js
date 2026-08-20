@@ -14,6 +14,7 @@ const {
 const { buildDiscordPayload, fallbackTitle } = require("./discord");
 const { buildWebsitePageEvent } = require("./events");
 const { emitTrackerEvent } = require("./event-stream");
+const { saveWebsitePagesReport } = require("./reports");
 
 const POLL_INTERVAL_MS = 5_000;
 const LOG_INTERVAL_MS = 5 * 60_000;
@@ -41,14 +42,22 @@ async function fetchPageTitles(urls) {
   return titles;
 }
 
-async function sendDiscordAlert(site, urls, sources, titles, scanDurationMs) {
+async function sendDiscordAlert(site, urls, sources, titles, scanDurationMs, reportUrl) {
   const webhookUrl = getSetting("discord_webhook_url");
   if (!webhookUrl || urls.length === 0) return;
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(
-      buildDiscordPayload(site, urls, new Date(), titles, sources, scanDurationMs)
+      buildDiscordPayload(
+        site,
+        urls,
+        new Date(),
+        titles,
+        sources,
+        scanDurationMs,
+        reportUrl
+      )
     ),
     signal: AbortSignal.timeout(10_000),
   });
@@ -109,6 +118,7 @@ async function scanSite(siteOrId) {
       if (inserted.length) {
         const detectedAt = new Date();
         const titles = await fetchPageTitles(inserted);
+        const report = saveWebsitePagesReport(site, inserted, titles, sources);
         for (const url of inserted) {
           emitTrackerEvent(
             buildWebsitePageEvent(
@@ -125,7 +135,8 @@ async function scanSite(siteOrId) {
           inserted,
           sources,
           titles,
-          Date.now() - startedAt
+          Date.now() - startedAt,
+          report.url
         );
         addLog(site.id, "new", `${inserted.length} new URL${inserted.length === 1 ? "" : "s"}`);
       }

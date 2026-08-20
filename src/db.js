@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 
 const dataDirectory = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -140,6 +141,15 @@ db.exec(`
     detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS alert_reports (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    item_count INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS discovered_urls_site_seen
     ON discovered_urls(site_id, first_seen_at DESC);
 
@@ -160,6 +170,9 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS pump_app_updates_detected
     ON pump_app_updates(detected_at DESC);
+
+  CREATE INDEX IF NOT EXISTS alert_reports_created
+    ON alert_reports(created_at DESC);
 `);
 
 const urlColumns = db.prepare("PRAGMA table_info(discovered_urls)").all();
@@ -455,6 +468,28 @@ const statements = {
       SELECT update_id FROM pump_app_updates ORDER BY detected_at DESC LIMIT 50
     )
   `),
+  insertAlertReport: db.prepare(`
+    INSERT INTO alert_reports (id, kind, title, item_count, payload_json)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  getAlertReport: db.prepare(`
+    SELECT * FROM alert_reports WHERE id = ?
+  `),
+  recentAlertReports: db.prepare(`
+    SELECT id, kind, title, item_count, created_at
+    FROM alert_reports
+    ORDER BY created_at DESC, rowid DESC
+    LIMIT ?
+  `),
+  countAlertReports: db.prepare(`
+    SELECT COUNT(*) AS count FROM alert_reports
+  `),
+  trimAlertReports: db.prepare(`
+    DELETE FROM alert_reports
+    WHERE id NOT IN (
+      SELECT id FROM alert_reports ORDER BY created_at DESC, rowid DESC LIMIT 500
+    )
+  `),
 };
 
 statements.ensurePumpState.run();
@@ -601,6 +636,20 @@ function savePumpUpdate(state, update) {
   }
 }
 
+function createAlertReport(kind, title, payload) {
+  const id = randomUUID();
+  const itemCount = Array.isArray(payload?.items) ? payload.items.length : 0;
+  statements.insertAlertReport.run(
+    id,
+    String(kind),
+    String(title),
+    itemCount,
+    JSON.stringify(payload)
+  );
+  statements.trimAlertReports.run();
+  return id;
+}
+
 module.exports = {
   db,
   statements,
@@ -612,5 +661,6 @@ module.exports = {
   addGithubItems,
   addGithubLog,
   addBinanceChanges,
+  createAlertReport,
   savePumpUpdate,
 };

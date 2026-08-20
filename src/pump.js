@@ -237,6 +237,33 @@ function diffPumpSignals(previous = {}, current = {}) {
   return changes;
 }
 
+function groupPumpChanges(changes = []) {
+  const categories = [
+    { key: "host", label: "Endpoints" },
+    { key: "route", label: "Routes" },
+    { key: "text", label: "UI text" },
+    { key: "asset", label: "Assets" },
+  ];
+  const groups = categories.map((category) => ({
+    ...category,
+    added: [],
+    removed: [],
+  }));
+  const groupsByKey = new Map(groups.map((group) => [group.key, group]));
+
+  for (const change of changes) {
+    const group = groupsByKey.get(change.category);
+    if (group && (change.type === "added" || change.type === "removed")) {
+      group[change.type].push(change.value);
+    }
+  }
+
+  return groups.map((group) => ({
+    ...group,
+    count: group.added.length + group.removed.length,
+  }));
+}
+
 function bundleSha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
@@ -256,6 +283,7 @@ module.exports = {
   extractBundleSignals,
   fetchPumpBundle,
   fetchPumpUpdate,
+  groupPumpChanges,
   parseMultipartParts,
   parsePlayStoreVersion,
   pumpRuntimeVersion,

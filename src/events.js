@@ -134,4 +134,5 @@ module.exports = {
   buildWebsitePageEvent,
   buildWebsiteSubdomainEvent,
   createEvent,
+  getPublicBaseUrl,
 };

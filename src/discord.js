@@ -1,4 +1,6 @@
 const { getBinanceNamespaceUrl } = require("./binance");
+const { getPublicBaseUrl } = require("./events");
+const { groupPumpChanges } = require("./pump");
 
 const EMBED_RED = 0xef4444;
 const GITHUB_PURPLE = 0x6e40c9;
@@ -40,7 +42,8 @@ function buildDiscordPayload(
   now = new Date(),
   titles = new Map(),
   sources = new Map(),
-  scanDurationMs = 0
+  scanDurationMs = 0,
+  reportUrl = null
 ) {
   const shown = urls.slice(0, MAX_VISIBLE_URLS);
   const extra = urls.length - shown.length;
@@ -48,7 +51,12 @@ function buildDiscordPayload(
   return {
     username: "the watcher",
     allowed_mentions: { parse: [] },
-    content: extra > 0 ? `+${extra} more new pages were discovered.` : undefined,
+    content:
+      extra > 0
+        ? `+${extra} more new pages were discovered.${
+            reportUrl ? ` [View all ${urls.length} →](${reportUrl})` : ""
+          }`
+        : undefined,
     embeds: shown.map((url) => ({
       color: EMBED_RED,
       author: { name: site.hostname },
@@ -63,13 +71,24 @@ function buildDiscordPayload(
   };
 }
 
-function buildSubdomainPayload(_site, entries, _scanDurationMs = 0, now = new Date()) {
+function buildSubdomainPayload(
+  _site,
+  entries,
+  _scanDurationMs = 0,
+  now = new Date(),
+  reportUrl = null
+) {
   const shown = entries.slice(0, MAX_VISIBLE_URLS);
   const extra = entries.length - shown.length;
   return {
     username: "the watcher",
     allowed_mentions: { parse: [] },
-    content: extra > 0 ? `+${extra} more subdomains were discovered.` : undefined,
+    content:
+      extra > 0
+        ? `+${extra} more subdomains were discovered.${
+            reportUrl ? ` [View all ${entries.length} →](${reportUrl})` : ""
+          }`
+        : undefined,
     embeds: shown.map((entry) => ({
       color: CT_BLUE,
       title: entry.hostname,
@@ -80,7 +99,13 @@ function buildSubdomainPayload(_site, entries, _scanDurationMs = 0, now = new Da
   };
 }
 
-function buildGitHubPayload(target, items, scanDurationMs, now = new Date()) {
+function buildGitHubPayload(
+  target,
+  items,
+  scanDurationMs,
+  now = new Date(),
+  reportUrl = null
+) {
   const shown = items.slice(0, MAX_VISIBLE_URLS);
   const extra = items.length - shown.length;
   const targetName =
@@ -91,7 +116,12 @@ function buildGitHubPayload(target, items, scanDurationMs, now = new Date()) {
   return {
     username: "the watcher",
     allowed_mentions: { parse: [] },
-    content: extra > 0 ? `+${extra} more GitHub updates were discovered.` : undefined,
+    content:
+      extra > 0
+        ? `+${extra} more GitHub updates were discovered.${
+            reportUrl ? ` [View all ${items.length} →](${reportUrl})` : ""
+          }`
+        : undefined,
     embeds: shown.map((item) => {
       const details =
         item.kind === "commit" && item.author
@@ -120,7 +150,7 @@ function formatBinanceValue(value, limit = 120) {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
-function formatBinanceChanges(changes) {
+function formatBinanceChanges(changes, reportUrl = null) {
   const counts = { added: 0, changed: 0, removed: 0 };
   const lines = [];
   for (const change of changes) {
@@ -141,7 +171,11 @@ function formatBinanceChanges(changes) {
   const summary = `+${counts.added} added · ~${counts.changed} changed · -${counts.removed} removed`;
   const remainder =
     changes.length > shown ? `\n… ${changes.length - shown} more changes` : "";
-  return `${summary}\n\`\`\`diff\n${lines.join("\n")}${remainder}\n\`\`\``;
+  const reportLink =
+    changes.length > shown && reportUrl
+      ? `\n[View all ${changes.length} changes →](${reportUrl})`
+      : "";
+  return `${summary}\n\`\`\`diff\n${lines.join("\n")}${remainder}\n\`\`\`${reportLink}`;
 }
 
 function buildBinancePayload(events, scanDurationMs, now = new Date()) {
@@ -161,7 +195,7 @@ function buildBinancePayload(events, scanDurationMs, now = new Date()) {
         author: { name: "binance.com UI" },
         title: `${event.namespace} updated`,
         url: getBinanceNamespaceUrl(event.namespace),
-        description: formatBinanceChanges(event.changes),
+        description: formatBinanceChanges(event.changes, event.reportUrl),
         footer: {
           text: `BINANCE UI · i18n · ${scanDurationMs}ms`,
         },
@@ -171,49 +205,21 @@ function buildBinancePayload(events, scanDurationMs, now = new Date()) {
   };
 }
 
-function formatPumpValue(value, limit = 100) {
-  const text = String(value || "")
-    .replace(/`/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
-}
-
 function buildPumpPayload(update, scanDurationMs, now = new Date()) {
-  const grouped = {
-    added: { asset: [], host: [], route: [], text: [] },
-    removed: { asset: [], host: [], route: [], text: [] },
-  };
-  for (const change of update.changes) {
-    grouped[change.type]?.[change.category]?.push(change.value);
-  }
-
-  const sections = [];
-  const addSection = (title, values, limit = 8) => {
-    if (!values.length) return;
-    const shown = values.slice(0, limit).map((value) => `+ ${formatPumpValue(value)}`);
-    if (values.length > shown.length) shown.push(`… ${values.length - shown.length} more`);
-    sections.push(`**${title}**\n\`\`\`diff\n${shown.join("\n")}\n\`\`\``);
-  };
-  addSection("New endpoints", grouped.added.host);
-  addSection("New routes", grouped.added.route);
-  addSection("New UI text", grouped.added.text, 6);
-
-  const addedAssets = grouped.added.asset.length;
-  const removedAssets = grouped.removed.asset.length;
-  const removedSignals =
-    grouped.removed.host.length +
-    grouped.removed.route.length +
-    grouped.removed.text.length;
-  const summary = [
-    `${update.changes.length} extracted changes`,
-    `${addedAssets} assets added`,
-    `${removedAssets} assets removed`,
-    `${removedSignals} readable signals removed`,
-  ].join(" · ");
-  if (!sections.length) {
-    sections.push("Bundle changed; no new readable endpoint, route, or UI text was extracted.");
-  }
+  const groups = groupPumpChanges(update.changes);
+  const added = groups.reduce((total, group) => total + group.added.length, 0);
+  const removed = groups.reduce((total, group) => total + group.removed.length, 0);
+  const categorySummary = groups
+    .filter((group) => group.count)
+    .map((group) => `${group.label} ${group.count}`)
+    .join(" · ");
+  const reportUrl = `${getPublicBaseUrl()}/pump/updates/${encodeURIComponent(update.updateId)}`;
+  const description = [
+    `**${update.changes.length} changes** · +${added} added · -${removed} removed`,
+    categorySummary || "Bundle changed; no readable signal changes were extracted.",
+    `Published: ${update.publishedAt || "unknown"}`,
+    `[View all ${update.changes.length} changes →](${reportUrl})`,
+  ].join("\n");
 
   return {
     username: "the watcher",
@@ -223,16 +229,8 @@ function buildPumpPayload(update, scanDurationMs, now = new Date()) {
         color: PUMP_GREEN,
         author: { name: "pump.fun app" },
         title: `New app update · ${update.runtimeVersion}`,
-        url: "https://u.expo.dev/660d9cc8-3cc2-4269-8845-7be9bbed752b",
-        description: `${summary}\n\n${sections.join("\n").slice(0, 3500)}`,
-        fields: [
-          { name: "Update", value: update.updateId, inline: false },
-          {
-            name: "Published",
-            value: update.publishedAt || "unknown",
-            inline: false,
-          },
-        ],
+        url: reportUrl,
+        description,
         footer: { text: `PUMP APP · expo · ${scanDurationMs}ms` },
         timestamp: now.toISOString(),
       },

@@ -5,6 +5,7 @@ const {
   extractBundleSignals,
   fetchPumpBundle,
   fetchPumpUpdate,
+  groupPumpChanges,
   parseMultipartParts,
   parsePlayStoreVersion,
 } = require("../src/pump");
@@ -152,20 +153,51 @@ test("extracts and diffs Pump feature signals", () => {
   );
 });
 
+test("groups every Pump change by category and type", () => {
+  const changes = [
+    { type: "added", category: "host", value: "api.pump.fun" },
+    { type: "removed", category: "host", value: "old.pump.fun" },
+    { type: "added", category: "route", value: "/coin/new" },
+  ];
+  const groups = groupPumpChanges(changes);
+  const endpoints = groups.find((group) => group.key === "host");
+  const routes = groups.find((group) => group.key === "route");
+
+  assert.deepEqual(endpoints.added, ["api.pump.fun"]);
+  assert.deepEqual(endpoints.removed, ["old.pump.fun"]);
+  assert.equal(endpoints.count, 2);
+  assert.deepEqual(routes.added, ["/coin/new"]);
+  assert.equal(
+    groups.reduce((total, group) => total + group.count, 0),
+    changes.length
+  );
+});
+
 test("builds a concise Pump app Discord alert", () => {
+  const changes = [
+    { type: "added", category: "host", value: "advanced-api-v2.pump.fun" },
+    ...Array.from({ length: 4102 }, (_, index) => ({
+      type: index % 2 ? "added" : "removed",
+      category: "text",
+      value: `Extracted UI text ${index}`,
+    })),
+  ];
   const payload = buildPumpPayload(
     {
       updateId: "new-update",
       runtimeVersion: "26.0.0",
       publishedAt: "2026-08-18T08:00:00.000Z",
-      changes: [
-        { type: "added", category: "host", value: "advanced-api-v2.pump.fun" },
-      ],
+      changes,
     },
     942,
     new Date("2026-08-18T08:01:00.000Z")
   );
   assert.equal(payload.embeds[0].title, "New app update · 26.0.0");
-  assert.match(payload.embeds[0].description, /advanced-api-v2\.pump\.fun/);
+  assert.match(payload.embeds[0].description, /\*\*4103 changes\*\*/);
+  assert.match(payload.embeds[0].description, /View all 4103 changes/);
+  assert.match(payload.embeds[0].url, /\/pump\/updates\/new-update$/);
+  assert.ok(payload.embeds[0].description.split("\n").length <= 10);
+  assert.ok(payload.embeds[0].description.length < 500);
+  assert.equal(payload.embeds[0].fields, undefined);
   assert.equal(payload.embeds[0].footer.text, "PUMP APP · expo · 942ms");
 });

@@ -15,6 +15,7 @@ const {
 const { buildSubdomainPayload } = require("./discord");
 const { buildWebsiteSubdomainEvent } = require("./events");
 const { emitTrackerEvent } = require("./event-stream");
+const { saveSubdomainsReport } = require("./reports");
 
 const CT_SWEEP_INTERVAL_MS = 6 * 60 * 60_000;
 const CRT_REQUEST_GAP_MS = 13_000;
@@ -90,13 +91,15 @@ function getActiveSitesCached() {
   return activeSitesCache;
 }
 
-async function sendDiscordAlert(site, entries, startedAt) {
+async function sendDiscordAlert(site, entries, startedAt, reportUrl) {
   const webhookUrl = getSetting("discord_webhook_url");
   if (!webhookUrl || !entries.length) return;
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(buildSubdomainPayload(site, entries, Date.now() - startedAt)),
+    body: JSON.stringify(
+      buildSubdomainPayload(site, entries, Date.now() - startedAt, new Date(), reportUrl)
+    ),
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error(`Discord webhook returned ${response.status}`);
@@ -126,11 +129,12 @@ async function processCtEntries(siteOrId, entries, source, options = {}) {
 
   if (site.ct_baselined && !options.forceBaseline) {
     const detectedAt = new Date();
+    const report = saveSubdomainsReport(site, inserted);
     for (const entry of inserted) {
       emitTrackerEvent(buildWebsiteSubdomainEvent(site, entry, detectedAt));
     }
     try {
-      await sendDiscordAlert(site, inserted, startedAt);
+      await sendDiscordAlert(site, inserted, startedAt, report.url);
     } catch (error) {
       addLog(site.id, "error", `CT Discord alert failed: ${error.message}`);
     }

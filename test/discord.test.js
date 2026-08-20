@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  buildBinancePayload,
   buildDiscordPayload,
   buildGitHubPayload,
   buildSubdomainPayload,
@@ -37,6 +38,45 @@ test("builds a capped multi-page embed", () => {
   assert.equal(payload.embeds.length, 10);
   assert.equal(payload.content, "+2 more new pages were discovered.");
   assert.equal(payload.embeds[9].title, "Page 10");
+});
+
+test("links page, subdomain, and GitHub overflow to exact reports", () => {
+  const reportUrl = "https://tracker.example/reports/report-123";
+  const urls = Array.from(
+    { length: 12 },
+    (_, index) => `https://openai.com/page-${index + 1}`
+  );
+  const pagePayload = buildDiscordPayload(
+    site,
+    urls,
+    now,
+    new Map(),
+    new Map(),
+    0,
+    reportUrl
+  );
+  assert.match(pagePayload.content, /View all 12/);
+  assert.match(pagePayload.content, /report-123/);
+
+  const entries = urls.map((_, index) => ({
+    hostname: `sub-${index}.openai.com`,
+  }));
+  const subdomainPayload = buildSubdomainPayload(site, entries, 0, now, reportUrl);
+  assert.match(subdomainPayload.content, /View all 12/);
+
+  const items = urls.map((url, index) => ({
+    kind: "commit",
+    title: `Commit ${index}`,
+    url,
+  }));
+  const githubPayload = buildGitHubPayload(
+    { kind: "repo", owner: "openai", repo: "codex" },
+    items,
+    0,
+    now,
+    reportUrl
+  );
+  assert.match(githubPayload.content, /View all 12/);
 });
 
 test("uses fetched titles for new page labels", () => {
@@ -80,4 +120,25 @@ test("builds certificate subdomain embeds", () => {
   assert.equal(payload.embeds[0].footer.text, "NEW SUBDOMAIN");
   assert.equal(payload.embeds[0].description, undefined);
   assert.equal(payload.embeds[0].author, undefined);
+});
+
+test("links truncated Binance changes to their exact report", () => {
+  const changes = Array.from({ length: 30 }, (_, index) => ({
+    type: "added",
+    key: `translation.key.${index}`,
+    newValue: `A long translated value for item ${index}`,
+  }));
+  const payload = buildBinancePayload(
+    [{
+      namespace: "web",
+      changes,
+      reportUrl: "https://tracker.example/reports/binance-report",
+    }],
+    10,
+    now
+  );
+
+  assert.match(payload.embeds[0].description, /more changes/);
+  assert.match(payload.embeds[0].description, /View all 30 changes/);
+  assert.match(payload.embeds[0].description, /binance-report/);
 });

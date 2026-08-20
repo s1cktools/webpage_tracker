@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title><%= report.title %> · PagePulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">page<span>pulse</span></a>
+      <div class="runtime">public update report</div>
+    </header>
+
+    <main class="shell pump-detail">
+      <section class="command">
+        <div>
+          <span class="kicker"><%= report.kind %> · exact alert snapshot</span>
+          <h1><%= report.title %></h1>
+        </div>
+        <a class="detail-source" href="/reports">all reports →</a>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= report.item_count %></b> items</span>
+        <span><b><%= report.created_at %></b> detected</span>
+      </section>
+
+      <% if (payload.subtitle) { %>
+        <p class="report-subtitle"><%= payload.subtitle %></p>
+      <% } %>
+
+      <section class="block report-items" tabindex="0">
+        <% if (!payload.items?.length) { %>
+          <div class="empty">no report items</div>
+        <% } %>
+
+        <% (payload.items || []).forEach((item) => { %>
+          <article class="report-item">
+            <% if (item.type) { %>
+              <span class="change-type <%= item.type %>"><%= item.type %></span>
+            <% } else { %>
+              <span class="report-kind"><%= report.kind %></span>
+            <% } %>
+
+            <div>
+              <% if (item.url) { %>
+                <a href="<%= item.url %>" target="_blank" rel="noopener noreferrer"><%= item.label %> ↗</a>
+              <% } else { %>
+                <b><%= item.label %></b>
+              <% } %>
+              <% if (item.meta) { %><small><%= item.meta %></small><% } %>
+              <% if (item.value) { %><code><%= item.value %></code><% } %>
+              <% if (item.oldValue !== undefined) { %>
+                <code class="report-old">− <%= item.oldValue ?? "—" %></code>
+              <% } %>
+              <% if (item.newValue !== undefined) { %>
+                <code class="report-new">+ <%= item.newValue ?? "—" %></code>
+              <% } %>
+            </div>
+          </article>
+        <% }) %>
+      </section>
+    </main>
+  </body>
+</html>

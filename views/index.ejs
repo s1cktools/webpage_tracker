@@ -312,15 +312,45 @@
         <% } %>
 
         <% recentPumpUpdates.forEach((update) => { %>
-          <article class="pump-row">
-            <a href="/pump/updates/<%= encodeURIComponent(update.update_id) %>">
-              <code title="<%= update.update_id %>"><%= update.update_id.slice(0, 12) %></code>
-            </a>
+          <a
+            class="pump-row"
+            href="/pump/updates/<%= encodeURIComponent(update.update_id) %>"
+            aria-label="View all <%= update.change_count %> changes in Pump update <%= update.update_id %>"
+          >
+            <code title="<%= update.update_id %>"><%= update.update_id.slice(0, 12) %></code>
             <b><%= update.runtime_version %></b>
             <span><%= update.change_count %></span>
             <time datetime="<%= update.published_at || '' %>"><%= update.published_at || "—" %></time>
             <time datetime="<%= update.detected_at %>"><%= update.detected_at %></time>
-          </article>
+          </a>
+        <% }) %>
+      </section>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">VIEW</span>
+          <h1>update reports</h1>
+        </div>
+        <a class="detail-source" href="/reports">view all <%= reportCount %> →</a>
+      </section>
+
+      <section class="block report-list">
+        <header class="report-list-header">
+          <span>report</span>
+          <span>type</span>
+          <span>items</span>
+          <span>detected</span>
+        </header>
+        <% if (!recentReports.length) { %>
+          <div class="empty">reports appear when updates are detected</div>
+        <% } %>
+        <% recentReports.forEach((report) => { %>
+          <a class="report-row" href="/reports/<%= encodeURIComponent(report.id) %>">
+            <b><%= report.title %></b>
+            <span><%= report.kind %></span>
+            <span><%= report.item_count %></span>
+            <time datetime="<%= report.created_at %>"><%= report.created_at %></time>
+          </a>
         <% }) %>
       </section>
     </main>

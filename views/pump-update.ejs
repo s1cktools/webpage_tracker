@@ -33,16 +33,40 @@
         <span><b><%= update.published_at || "—" %></b> published</span>
       </section>
 
-      <section class="block pump-change-list">
-        <% if (!changes.length) { %>
+      <section class="pump-change-report">
+        <% if (!groups.some((group) => group.count)) { %>
           <div class="empty">bundle changed · no readable signals changed</div>
         <% } %>
-        <% changes.forEach((change) => { %>
-          <article class="pump-change">
-            <span class="change-type <%= change.type %>"><%= change.type %></span>
-            <span class="pump-category"><%= change.category %></span>
-            <code><%= change.value %></code>
-          </article>
+        <% groups.filter((group) => group.count).forEach((group, index) => { %>
+          <details class="block pump-change-group" <%= index === 0 ? "open" : "" %>>
+            <summary>
+              <span><%= group.label %></span>
+              <span class="pump-group-counts">
+                <b class="added">+<%= group.added.length %></b>
+                <b class="removed">-<%= group.removed.length %></b>
+                <b><%= group.count %> total</b>
+              </span>
+            </summary>
+
+            <% ["added", "removed"].forEach((type) => { %>
+              <% if (group[type].length) { %>
+                <section class="pump-change-section">
+                  <header>
+                    <span class="change-type <%= type %>"><%= type %></span>
+                    <span><%= group[type].length %> changes</span>
+                  </header>
+                  <div class="pump-change-values" tabindex="0">
+                    <% group[type].forEach((value) => { %>
+                      <article class="pump-change">
+                        <span aria-hidden="true"><%= type === "added" ? "+" : "−" %></span>
+                        <code><%= value %></code>
+                      </article>
+                    <% }) %>
+                  </div>
+                </section>
+              <% } %>
+            <% }) %>
+          </details>
         <% }) %>
       </section>
     </main>

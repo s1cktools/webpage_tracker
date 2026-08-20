@@ -24,6 +24,7 @@ const {
   scanPumpApp,
   startPumpScanner,
 } = require("./pump-scanner");
+const { groupPumpChanges } = require("./pump");
 const { POLL_INTERVAL_MS, scanSite, startScanner } = require("./scanner");
 
 const app = express();
@@ -49,7 +50,30 @@ app.get("/pump/updates/:updateId", (request, response) => {
     return response.status(500).send("Saved Pump app update is invalid.");
   }
 
-  return response.render("pump-update", { update, changes });
+  return response.render("pump-update", {
+    update,
+    groups: groupPumpChanges(changes),
+  });
+});
+
+app.get("/reports", (_request, response) => {
+  response.render("reports", {
+    reports: statements.recentAlertReports.all(500),
+  });
+});
+
+app.get("/reports/:reportId", (request, response) => {
+  const report = statements.getAlertReport.get(request.params.reportId);
+  if (!report) return response.status(404).send("Update report not found.");
+
+  let payload;
+  try {
+    payload = JSON.parse(report.payload_json);
+  } catch {
+    return response.status(500).send("Saved update report is invalid.");
+  }
+
+  return response.render("report", { report, payload });
 });
 
 if (process.env.DASHBOARD_PASSWORD) {
@@ -86,6 +110,8 @@ app.get("/", (request, response) => {
     recentPumpUpdates: statements.recentPumpUpdates.all(10),
     pumpUpdateCount: statements.countPumpUpdates.get().count,
     pumpEnabled: isPumpEnabled(),
+    recentReports: statements.recentAlertReports.all(10),
+    reportCount: statements.countAlertReports.get().count,
     webhookConfigured: Boolean(webhook),
     githubConfigured: Boolean(process.env.GITHUB_TOKEN),
     pollSeconds: POLL_INTERVAL_MS / 1000,
