@@ -47,12 +47,21 @@ test("uses Binance ETags for unchanged checks", async (context) => {
   let headers;
   context.mock.method(global, "fetch", async (_url, options) => {
     headers = options.headers;
-    return new Response(null, { status: 304 });
+    return new Response(null, {
+      status: 304,
+      headers: {
+        etag: '"saved"',
+        "last-modified": "Fri, 21 Aug 2026 13:51:13 GMT",
+        "x-amz-version-id": "s3-version",
+      },
+    });
   });
 
   const result = await fetchBinanceNamespace("activity-ui", '"saved"');
   assert.equal(headers["if-none-match"], '"saved"');
   assert.equal(result.unchanged, true);
+  assert.equal(result.versionId, "s3-version");
+  assert.equal(result.lastModified, "Fri, 21 Aug 2026 13:51:13 GMT");
 });
 
 test("parses and fetches the native Binance app translations", async (context) => {
@@ -69,7 +78,14 @@ test("parses and fetches the native Binance app translations", async (context) =
         '  <string name="escaped">Trade &amp; Earn</string>',
         "</resources>",
       ].join("\n"),
-      { status: 200, headers: { etag: '"native-etag"' } }
+      {
+        status: 200,
+        headers: {
+          etag: '"native-etag"',
+          "last-modified": "Fri, 21 Aug 2026 13:51:13 GMT",
+          "x-amz-version-id": "native-version",
+        },
+      }
     );
   });
 
@@ -77,6 +93,7 @@ test("parses and fetches the native Binance app translations", async (context) =
   assert.equal(requestedUrl, BINANCE_APP_URL);
   assert.equal(headers.accept, "application/xml");
   assert.equal(result.etag, '"native-etag"');
+  assert.equal(result.versionId, "native-version");
   assert.deepEqual(result.data, {
     content_coin_label_guide_title: "Reply stands out!",
     escaped: "Trade & Earn",

@@ -268,6 +268,156 @@ function bundleSha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
+function safeAssetKey(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return /^[a-f0-9]{32}$/.test(key) ? key : "";
+}
+
+function normalizeAssetExtension(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.startsWith("image/")) {
+    const subtype = raw.slice(6).split("+")[0];
+    if (subtype === "jpeg") return ".jpg";
+    if (subtype === "svg+xml") return ".svg";
+    const cleaned = subtype.replace(/[^a-z0-9]/g, "");
+    return cleaned ? `.${cleaned}` : "";
+  }
+  const extension = raw.startsWith(".") ? raw.slice(1) : raw;
+  if (/^[a-z0-9]{1,8}$/.test(extension)) return `.${extension}`;
+  return "";
+}
+
+function isImageAsset(meta = {}) {
+  const contentType = String(meta.contentType || "").toLowerCase();
+  const extension = normalizeAssetExtension(meta.fileExtension || meta.type);
+  return (
+    contentType.startsWith("image/") ||
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].includes(extension)
+  );
+}
+
+function describeManifestAssets(manifest = {}) {
+  return (manifest.assets || []).flatMap((asset) => {
+    const key = String(asset.key || "").trim();
+    if (!key) return [];
+    const fileExtension = normalizeAssetExtension(
+      asset.fileExtension || asset.contentType || asset.type
+    );
+    const contentType = String(asset.contentType || "").trim();
+    return [
+      {
+        key,
+        url: asset.url || null,
+        contentType,
+        fileExtension,
+        hash: asset.hash || null,
+      },
+    ];
+  });
+}
+
+function extractPackagerAssetMeta(buffer) {
+  const text = Buffer.isBuffer(buffer) ? buffer.toString("latin1") : String(buffer || "");
+  const names = new Map();
+  const pattern = /\{[^{}]{0,500}"__packager_asset"[^{}]{0,500}\}/g;
+  for (const match of text.matchAll(pattern)) {
+    try {
+      const json = JSON.parse(match[0]);
+      const key = String(json.hash || json.key || "").trim();
+      if (!key) continue;
+      names.set(key, {
+        name: json.name || null,
+        type: json.type || null,
+        width: Number(json.width) || null,
+        height: Number(json.height) || null,
+      });
+    } catch {
+      // Hermes bytecode often leaves this metadata unparseable.
+    }
+  }
+  return names;
+}
+
+function mergePumpAssetMeta(manifest, bundleBuffer) {
+  const packagerMeta = extractPackagerAssetMeta(bundleBuffer);
+  return describeManifestAssets(manifest).map((asset) => {
+    const extra = packagerMeta.get(asset.key) || {};
+    const fileExtension =
+      asset.fileExtension || normalizeAssetExtension(extra.type) || "";
+    return {
+      ...asset,
+      name: extra.name || null,
+      type: extra.type || null,
+      width: extra.width || null,
+      height: extra.height || null,
+      fileExtension,
+    };
+  });
+}
+
+async function fetchPumpAsset(asset, extensions = {}) {
+  if (!asset?.url) throw new Error("Pump asset is missing a download URL");
+  const authorization = extensions.assetRequestHeaders?.[asset.key]?.authorization;
+  const headers = { "user-agent": "the-watcher/1.0" };
+  if (authorization) headers.authorization = authorization;
+
+  const response = await pumpFetch(
+    asset.url,
+    { headers },
+    REQUEST_TIMEOUT_MS,
+    "Pump asset"
+  );
+  if (!response.ok) {
+    throw new Error(`Pump asset returned ${response.status}`);
+  }
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type") || asset.contentType || "",
+  };
+}
+
+function formatAssetLabel(key, meta = {}) {
+  const extension = normalizeAssetExtension(meta.fileExtension || meta.type);
+  if (meta.name) return `${meta.name}${extension}`;
+  if (meta.contentType) return meta.contentType;
+  if (extension) return extension.slice(1);
+  return key;
+}
+
+function collectAssetKeys(changes = []) {
+  return [
+    ...new Set(
+      changes
+        .filter((change) => change.category === "asset" && change.value)
+        .map((change) => change.value)
+    ),
+  ];
+}
+
+function decoratePumpChangeGroups(groups = [], assetsByKey = {}) {
+  return groups.map((group) => {
+    const decorate = (value) => {
+      const meta = assetsByKey[value] || {};
+      const label = group.key === "asset" ? formatAssetLabel(value, meta) : value;
+      return {
+        key: value,
+        label,
+        contentType: meta.contentType || null,
+        previewUrl:
+          group.key === "asset" && meta.hasFile && isImageAsset(meta)
+            ? `/pump/assets/${encodeURIComponent(value)}`
+            : null,
+      };
+    };
+    return {
+      ...group,
+      added: group.added.map(decorate),
+      removed: group.removed.map(decorate),
+    };
+  });
+}
+
 module.exports = {
   BUNDLE_TIMEOUT_MS,
   PLAY_STORE_TIMEOUT_MS,
@@ -279,13 +429,22 @@ module.exports = {
   PUMP_UPDATE_URL,
   REQUEST_TIMEOUT_MS,
   bundleSha256,
+  collectAssetKeys,
+  decoratePumpChangeGroups,
+  describeManifestAssets,
   diffPumpSignals,
   extractBundleSignals,
+  extractPackagerAssetMeta,
+  fetchPumpAsset,
   fetchPumpBundle,
   fetchPumpUpdate,
+  formatAssetLabel,
   groupPumpChanges,
+  isImageAsset,
+  mergePumpAssetMeta,
   parseMultipartParts,
   parsePlayStoreVersion,
   pumpRuntimeVersion,
   resolvePumpRuntimeVersion,
+  safeAssetKey,
 };

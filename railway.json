@@ -6,7 +6,6 @@
   },
   "deploy": {
     "numReplicas": 1,
-    "requiredMountPath": "/data",
     "healthcheckPath": "/health",
     "drainingSeconds": 15,
     "restartPolicyType": "ON_FAILURE",

@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
+const { diffObjects, getBinanceNamespaceUrl } = require("./binance");
 
 const dataDirectory = process.env.DATA_DIR || path.join(process.cwd(), "data");
 fs.mkdirSync(dataDirectory, { recursive: true });
@@ -100,6 +101,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS binance_ui_namespaces (
     name TEXT PRIMARY KEY,
     etag TEXT,
+    version_id TEXT,
+    last_modified_at TEXT,
     snapshot_json TEXT,
     baselined INTEGER NOT NULL DEFAULT 0,
     last_checked_at TEXT,
@@ -114,6 +117,23 @@ db.exec(`
     old_value TEXT,
     new_value TEXT,
     detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS binance_ui_observations (
+    namespace TEXT NOT NULL REFERENCES binance_ui_namespaces(name) ON DELETE CASCADE,
+    version_key TEXT NOT NULL,
+    etag TEXT,
+    version_id TEXT,
+    source_last_modified_at TEXT,
+    first_probe_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    report_id TEXT,
+    changes_count INTEGER NOT NULL DEFAULT 0,
+    changes_json TEXT,
+    notification_status TEXT NOT NULL DEFAULT 'none'
+      CHECK(notification_status IN ('none', 'pending', 'delivering', 'delivered')),
+    delivery_error TEXT,
+    PRIMARY KEY(namespace, version_key)
   );
 
   CREATE TABLE IF NOT EXISTS pump_app_state (
@@ -139,6 +159,17 @@ db.exec(`
     change_count INTEGER NOT NULL,
     changes_json TEXT NOT NULL,
     detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS pump_assets (
+    asset_key TEXT PRIMARY KEY,
+    name TEXT,
+    file_extension TEXT,
+    content_type TEXT,
+    has_file INTEGER NOT NULL DEFAULT 0,
+    filename TEXT,
+    source_update_id TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS alert_reports (
@@ -203,6 +234,16 @@ if (!siteColumns.some((column) => column.name === "ct_last_checked_at")) {
 }
 if (!siteColumns.some((column) => column.name === "ct_last_error")) {
   db.exec("ALTER TABLE sites ADD COLUMN ct_last_error TEXT");
+}
+
+const binanceNamespaceColumns = db
+  .prepare("PRAGMA table_info(binance_ui_namespaces)")
+  .all();
+if (!binanceNamespaceColumns.some((column) => column.name === "version_id")) {
+  db.exec("ALTER TABLE binance_ui_namespaces ADD COLUMN version_id TEXT");
+}
+if (!binanceNamespaceColumns.some((column) => column.name === "last_modified_at")) {
+  db.exec("ALTER TABLE binance_ui_namespaces ADD COLUMN last_modified_at TEXT");
 }
 
 const statements = {
@@ -380,17 +421,25 @@ const statements = {
   ensureBinanceNamespace: db.prepare(`
     INSERT OR IGNORE INTO binance_ui_namespaces (name) VALUES (?)
   `),
+  getBinanceNamespace: db.prepare(`
+    SELECT * FROM binance_ui_namespaces WHERE name = ?
+  `),
   listBinanceNamespaces: db.prepare(`
     SELECT * FROM binance_ui_namespaces ORDER BY name COLLATE NOCASE
   `),
   markBinanceUnchanged: db.prepare(`
     UPDATE binance_ui_namespaces
-    SET last_checked_at = CURRENT_TIMESTAMP, last_error = NULL
+    SET version_id = COALESCE(?, version_id),
+        last_modified_at = COALESCE(?, last_modified_at),
+        last_checked_at = CURRENT_TIMESTAMP,
+        last_error = NULL
     WHERE name = ?
   `),
   saveBinanceSnapshot: db.prepare(`
     UPDATE binance_ui_namespaces
     SET etag = ?,
+        version_id = ?,
+        last_modified_at = ?,
         snapshot_json = ?,
         baselined = 1,
         last_checked_at = CURRENT_TIMESTAMP,
@@ -416,6 +465,46 @@ const statements = {
   `),
   countBinanceChanges: db.prepare(`
     SELECT COUNT(*) AS count FROM binance_ui_changes
+  `),
+  insertBinanceObservation: db.prepare(`
+    INSERT OR IGNORE INTO binance_ui_observations (
+      namespace, version_key, etag, version_id,
+      source_last_modified_at, first_probe_id, observed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `),
+  getBinanceObservation: db.prepare(`
+    SELECT * FROM binance_ui_observations
+    WHERE namespace = ? AND version_key = ?
+  `),
+  finishBinanceObservation: db.prepare(`
+    UPDATE binance_ui_observations
+    SET report_id = ?,
+        changes_count = ?,
+        changes_json = ?,
+        notification_status = ?
+    WHERE namespace = ? AND version_key = ?
+  `),
+  claimBinanceNotification: db.prepare(`
+    UPDATE binance_ui_observations
+    SET notification_status = 'delivering', delivery_error = NULL
+    WHERE namespace = ? AND version_key = ? AND notification_status = 'pending'
+  `),
+  markBinanceNotificationDelivered: db.prepare(`
+    UPDATE binance_ui_observations
+    SET notification_status = 'delivered', delivery_error = NULL
+    WHERE namespace = ? AND version_key = ?
+  `),
+  markBinanceNotificationFailed: db.prepare(`
+    UPDATE binance_ui_observations
+    SET notification_status = 'pending', delivery_error = ?
+    WHERE namespace = ? AND version_key = ?
+  `),
+  pendingBinanceNotifications: db.prepare(`
+    SELECT namespace, version_key, first_probe_id, observed_at
+    FROM binance_ui_observations
+    WHERE notification_status = 'pending'
+    ORDER BY observed_at
   `),
   ensurePumpState: db.prepare(`
     INSERT OR IGNORE INTO pump_app_state (id) VALUES (1)
@@ -468,6 +557,24 @@ const statements = {
       SELECT update_id FROM pump_app_updates ORDER BY detected_at DESC LIMIT 50
     )
   `),
+  upsertPumpAsset: db.prepare(`
+    INSERT INTO pump_assets (
+      asset_key, name, file_extension, content_type,
+      has_file, filename, source_update_id, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(asset_key) DO UPDATE SET
+      name = COALESCE(excluded.name, name),
+      file_extension = COALESCE(excluded.file_extension, file_extension),
+      content_type = COALESCE(excluded.content_type, content_type),
+      has_file = CASE WHEN excluded.has_file = 1 THEN 1 ELSE has_file END,
+      filename = COALESCE(excluded.filename, filename),
+      source_update_id = COALESCE(excluded.source_update_id, source_update_id),
+      updated_at = CURRENT_TIMESTAMP
+  `),
+  getPumpAsset: db.prepare(`
+    SELECT * FROM pump_assets WHERE asset_key = ?
+  `),
   insertAlertReport: db.prepare(`
     INSERT INTO alert_reports (id, kind, title, item_count, payload_json)
     VALUES (?, ?, ?, ?, ?)
@@ -493,6 +600,11 @@ const statements = {
 };
 
 statements.ensurePumpState.run();
+db.exec(`
+  UPDATE binance_ui_observations
+  SET notification_status = 'pending'
+  WHERE notification_status = 'delivering'
+`);
 
 function getSetting(key) {
   return statements.getSetting.get(key)?.value || "";
@@ -605,6 +717,184 @@ function addBinanceChanges(namespace, changes) {
   }
 }
 
+function applyBinanceObservation(observation) {
+  const versionKey = observation.versionId || observation.etag;
+  if (!versionKey) throw new Error("Binance observation is missing a version identifier");
+
+  statements.ensureBinanceNamespace.run(observation.namespace);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const current = statements.getBinanceNamespace.get(observation.namespace);
+    if (
+      current.baselined &&
+      !current.last_modified_at &&
+      current.etag !== observation.etag &&
+      !observation.trustedLocal
+    ) {
+      db.exec("COMMIT");
+      return { status: "deferred", versionKey };
+    }
+
+    const inserted = statements.insertBinanceObservation.run(
+      observation.namespace,
+      versionKey,
+      observation.etag || null,
+      observation.versionId || null,
+      observation.lastModified || null,
+      observation.probeId,
+      observation.observedAt
+    );
+    if (!inserted.changes) {
+      db.exec("COMMIT");
+      return { status: "duplicate", versionKey };
+    }
+
+    const currentTime = Date.parse(current.last_modified_at || "");
+    const incomingTime = Date.parse(observation.lastModified || "");
+    const hasCurrentTime = Number.isFinite(currentTime);
+    const hasIncomingTime = Number.isFinite(incomingTime);
+    const isStale =
+      current.baselined &&
+      current.etag !== observation.etag &&
+      ((hasCurrentTime && !hasIncomingTime) ||
+        (hasCurrentTime && hasIncomingTime && incomingTime <= currentTime));
+
+    if (isStale) {
+      statements.finishBinanceObservation.run(
+        null,
+        0,
+        null,
+        "none",
+        observation.namespace,
+        versionKey
+      );
+      db.exec("COMMIT");
+      return { status: "stale", versionKey };
+    }
+
+    if (
+      current.baselined &&
+      (current.etag === observation.etag ||
+        (current.version_id &&
+          observation.versionId &&
+          current.version_id === observation.versionId))
+    ) {
+      statements.markBinanceUnchanged.run(
+        observation.versionId || null,
+        observation.lastModified || null,
+        observation.namespace
+      );
+      statements.finishBinanceObservation.run(
+        null,
+        0,
+        null,
+        "none",
+        observation.namespace,
+        versionKey
+      );
+      db.exec("COMMIT");
+      return { status: "unchanged", versionKey };
+    }
+
+    let changes = [];
+    if (current.baselined) {
+      if (!current.snapshot_json) {
+        throw new Error(`Missing Binance snapshot for ${observation.namespace}`);
+      }
+      changes = diffObjects(JSON.parse(current.snapshot_json), observation.snapshot);
+    }
+
+    statements.saveBinanceSnapshot.run(
+      observation.etag || null,
+      observation.versionId || null,
+      observation.lastModified || null,
+      JSON.stringify(observation.snapshot),
+      observation.namespace
+    );
+
+    let reportId = null;
+    if (current.baselined && changes.length) {
+      for (const change of changes) {
+        statements.insertBinanceChange.run(
+          observation.namespace,
+          change.type,
+          change.key,
+          change.oldValue ?? null,
+          change.newValue ?? null
+        );
+      }
+      statements.trimBinanceChanges.run();
+
+      reportId = randomUUID();
+      const items = changes.map((change) => ({
+        type: change.type,
+        label: change.key,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+      }));
+      statements.insertAlertReport.run(
+        reportId,
+        "binance",
+        `${observation.namespace} · Binance UI changes`,
+        items.length,
+        JSON.stringify({
+          subtitle: `${items.length} extracted translation changes`,
+          items,
+          sourceUrl: getBinanceNamespaceUrl(observation.namespace),
+        })
+      );
+      statements.trimAlertReports.run();
+    }
+
+    statements.finishBinanceObservation.run(
+      reportId,
+      changes.length,
+      changes.length ? JSON.stringify(changes) : null,
+      changes.length ? "pending" : "none",
+      observation.namespace,
+      versionKey
+    );
+    db.exec("COMMIT");
+    return {
+      status: current.baselined ? "accepted" : "baselined",
+      versionKey,
+      changes,
+      reportId,
+    };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function claimBinanceNotification(namespace, versionKey) {
+  const result = statements.claimBinanceNotification.run(namespace, versionKey);
+  if (!result.changes) return null;
+  const row = statements.getBinanceObservation.get(namespace, versionKey);
+  return {
+    namespace,
+    versionKey,
+    reportId: row.report_id,
+    changes: JSON.parse(row.changes_json || "[]"),
+  };
+}
+
+function markBinanceNotificationDelivered(namespace, versionKey) {
+  statements.markBinanceNotificationDelivered.run(namespace, versionKey);
+}
+
+function markBinanceNotificationFailed(namespace, versionKey, error) {
+  statements.markBinanceNotificationFailed.run(
+    String(error?.message || error).slice(0, 500),
+    namespace,
+    versionKey
+  );
+}
+
+function listPendingBinanceNotifications() {
+  return statements.pendingBinanceNotifications.all();
+}
+
 function savePumpUpdate(state, update) {
   db.exec("BEGIN");
   try {
@@ -653,6 +943,7 @@ function createAlertReport(kind, title, payload) {
 module.exports = {
   dataDirectory,
   db,
+  dataDirectory,
   statements,
   getSetting,
   addDiscoveredUrls,
@@ -662,6 +953,11 @@ module.exports = {
   addGithubItems,
   addGithubLog,
   addBinanceChanges,
+  applyBinanceObservation,
+  claimBinanceNotification,
   createAlertReport,
+  listPendingBinanceNotifications,
+  markBinanceNotificationDelivered,
+  markBinanceNotificationFailed,
   savePumpUpdate,
 };

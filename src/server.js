@@ -10,6 +10,10 @@ const {
   startBinanceScanner,
 } = require("./binance-scanner");
 const { getBinanceNamespaceUrl } = require("./binance");
+const {
+  isAuthorizedProbe,
+  processBinanceObservation,
+} = require("./binance-observations");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { attachEventStream } = require("./event-stream");
 const {
@@ -31,7 +35,8 @@ const {
   scanPumpApp,
   startPumpScanner,
 } = require("./pump-scanner");
-const { groupPumpChanges } = require("./pump");
+const { decoratePumpChangeGroups, collectAssetKeys, groupPumpChanges } = require("./pump");
+const { getPumpAssetFile, getPumpAssetsByKeys } = require("./pump-assets");
 const { POLL_INTERVAL_MS, scanSite, startScanner } = require("./scanner");
 
 const app = express();
@@ -46,6 +51,39 @@ app.get("/health", (request, response) => {
   response.status(200).send("ok");
 });
 
+app.post(
+  "/internal/binance/observations",
+  (request, response, next) => {
+    if (isAuthorizedProbe(request.headers.authorization)) return next();
+    return response.status(401).json({ error: "Unauthorized" });
+  },
+  express.json({ limit: "10mb" }),
+  async (request, response) => {
+    try {
+      const result = await processBinanceObservation(request.body);
+      if (result.status === "deferred") {
+        return response.status(503).json({ status: "retry" });
+      }
+      return response.status(202).json({ status: result.status });
+    } catch (error) {
+      const invalid = /^(Unknown|Invalid|Missing)/.test(error.message);
+      console.error("[binance-ingest]", error.message);
+      return response
+        .status(invalid ? 400 : 500)
+        .json({ error: invalid ? error.message : "Observation processing failed" });
+    }
+  }
+);
+
+app.get("/pump/assets/:key", (request, response) => {
+  const file = getPumpAssetFile(request.params.key);
+  if (!file) return response.status(404).send("Asset not found.");
+  response.setHeader("cache-control", "public, max-age=86400, immutable");
+  return response.sendFile(file.absolutePath, {
+    headers: { "content-type": file.contentType },
+  });
+});
+
 app.get("/pump/updates/:updateId", (request, response) => {
   const update = statements.getPumpUpdate.get(request.params.updateId);
   if (!update) return response.status(404).send("Pump app update not found.");
@@ -57,9 +95,10 @@ app.get("/pump/updates/:updateId", (request, response) => {
     return response.status(500).send("Saved Pump app update is invalid.");
   }
 
+  const assetsByKey = getPumpAssetsByKeys(collectAssetKeys(changes));
   return response.render("pump-update", {
     update,
-    groups: groupPumpChanges(changes),
+    groups: decoratePumpChangeGroups(groupPumpChanges(changes), assetsByKey),
   });
 });
 

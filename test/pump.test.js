@@ -1,8 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  collectAssetKeys,
+  decoratePumpChangeGroups,
+  describeManifestAssets,
   diffPumpSignals,
   extractBundleSignals,
+  extractPackagerAssetMeta,
+  fetchPumpAsset,
   fetchPumpBundle,
   fetchPumpUpdate,
   groupPumpChanges,
@@ -200,4 +205,96 @@ test("builds a concise Pump app Discord alert", () => {
   assert.ok(payload.embeds[0].description.length < 500);
   assert.equal(payload.embeds[0].fields, undefined);
   assert.equal(payload.embeds[0].footer.text, "PUMP APP · expo · 942ms");
+});
+
+test("describes Expo manifest assets with content types", () => {
+  const assets = describeManifestAssets({
+    assets: [
+      {
+        key: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        contentType: "image/webp",
+        fileExtension: ".webp",
+        url: "https://assets.eascdn.net/icon",
+      },
+      {
+        key: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        contentType: "font/ttf",
+        fileExtension: ".ttf",
+      },
+    ],
+  });
+  assert.equal(assets[0].fileExtension, ".webp");
+  assert.equal(assets[0].contentType, "image/webp");
+  assert.equal(assets[1].fileExtension, ".ttf");
+});
+
+test("extracts packager asset names from JS bundles", () => {
+  const key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const names = extractPackagerAssetMeta(
+    Buffer.from(
+      JSON.stringify({
+        __packager_asset: true,
+        hash: key,
+        name: "new-badge",
+        type: "png",
+        width: 48,
+        height: 48,
+      })
+    )
+  );
+  assert.equal(names.get(key).name, "new-badge");
+  assert.equal(names.get(key).type, "png");
+});
+
+test("decorates asset changes with labels and preview URLs", () => {
+  const groups = decoratePumpChangeGroups(
+    groupPumpChanges([
+      { type: "added", category: "asset", value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      { type: "added", category: "host", value: "api.pump.fun" },
+    ]),
+    {
+      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: {
+        name: "new-badge",
+        fileExtension: ".webp",
+        contentType: "image/webp",
+        hasFile: true,
+      },
+    }
+  );
+  const assets = groups.find((group) => group.key === "asset");
+  const hosts = groups.find((group) => group.key === "host");
+  assert.equal(assets.added[0].label, "new-badge.webp");
+  assert.equal(
+    assets.added[0].previewUrl,
+    "/pump/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  );
+  assert.equal(hosts.added[0].label, "api.pump.fun");
+  assert.equal(hosts.added[0].previewUrl, null);
+  assert.deepEqual(collectAssetKeys(assets.added.map((item) => ({
+    category: "asset",
+    value: item.key,
+  }))), ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]);
+});
+
+test("downloads authorized Expo assets", async (context) => {
+  const asset = {
+    key: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    url: "https://assets.eascdn.net/icon.webp",
+    contentType: "image/webp",
+  };
+  context.mock.method(global, "fetch", async (_url, options) => {
+    assert.equal(options.headers.authorization, "EAS-HMAC-SHA256 secret");
+    return new Response(Buffer.from("RIFF....WEBP"), {
+      status: 200,
+      headers: { "content-type": "image/webp" },
+    });
+  });
+
+  const downloaded = await fetchPumpAsset(asset, {
+    assetRequestHeaders: {
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": { authorization: "EAS-HMAC-SHA256 secret" },
+    },
+  });
+  assert.equal(downloaded.contentType, "image/webp");
+  assert.equal(downloaded.buffer.slice(0, 4).toString(), "RIFF");
 });

@@ -124,8 +124,13 @@ async function fetchBinanceNamespace(namespace, etag = null) {
     headers,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
+  const responseMetadata = {
+    etag: response.headers.get("etag") || etag,
+    lastModified: response.headers.get("last-modified") || null,
+    versionId: response.headers.get("x-amz-version-id") || null,
+  };
   if (response.status === 304) {
-    return { unchanged: true, etag, data: null };
+    return { unchanged: true, ...responseMetadata, data: null };
   }
   if (!response.ok) {
     throw new Error(`Binance returned ${response.status} for ${namespace}`);
@@ -143,7 +148,7 @@ async function fetchBinanceNamespace(namespace, etag = null) {
   }
   return {
     unchanged: false,
-    etag: response.headers.get("etag") || etag,
+    ...responseMetadata,
     data,
   };
 }

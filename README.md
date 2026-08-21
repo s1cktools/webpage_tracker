@@ -73,6 +73,12 @@ values. Discord alerts summarize added, modified, and removed UI strings and
 include a limited set of changed lines. The dashboard can pause the monitor,
 trigger a manual check, and display recent changes or endpoint errors.
 
+For lower CDN detection latency, the same repository can also run stateless
+`binance-probe` services in other regions. A probe runs only the Binance poller
+and a health endpoint. It forwards changed snapshots to the primary service,
+which rejects stale CDN versions, deduplicates matching S3 versions, stores the
+diff, and remains the only service that emits Socket.IO and Discord alerts.
+
 ## Pump app monitoring
 
 The Pump monitor checks the Android `mainnet` Expo update channel every five
@@ -126,18 +132,34 @@ event payloads.
 
 ## Railway
 
-1. Deploy this repository as a Railway service. Railway builds the included
+1. Deploy this repository as the primary Railway service. Railway builds the included
    Dockerfile, which pins Cert Spotter `v0.24.2`.
 2. Add a persistent volume mounted at `/data`.
 3. Set `DASHBOARD_PASSWORD` to protect the public dashboard with HTTP Basic Auth.
 4. Set `GITHUB_TOKEN` if GitHub monitoring will be used.
-5. Generate a Railway domain for the service.
+5. Generate a strong `BINANCE_PROBE_SECRET` and a Railway domain for the service.
 
-The image already stores data under `/data` and Railway refuses to deploy it
-without that volume. The app uses Railway's `PORT` automatically. Run only one replica because the
-scanners and Cert Spotter supervisor run inside the web process and SQLite is a
-single-file database. The volume preserves both `tracker.db` and Cert Spotter's
-per-log cursor state.
+To add regional Binance probes, create two more Railway services from the same
+repository in different regions. Do not attach volumes. Set these variables on
+each probe:
+
+```text
+APP_ROLE=binance-probe
+BINANCE_PROBE_SECRET=the-same-secret-as-primary
+```
+
+Set `BINANCE_PROBE_SECRET` once as a shared Railway variable available to the
+primary and probes. The probe ID comes from its Railway service name, and the
+primary defaults to `https://webtracker.up.railway.app`. `PRIMARY_URL` and
+`PROBE_ID` remain available only as optional overrides. Probe services do not
+need `DATA_DIR`, `DASHBOARD_PASSWORD`, `GITHUB_TOKEN`, `EVENT_STREAM_TOKEN`, or
+a Discord webhook.
+
+The image stores primary data under `/data`. Run only one primary replica
+because the scanners and Cert Spotter supervisor run inside the web process and
+SQLite is a single-file database. Its volume preserves both `tracker.db` and
+Cert Spotter's per-log cursor state. Additional services must use
+`APP_ROLE=binance-probe`, not another primary replica.
 
 ## Discovery limits
 

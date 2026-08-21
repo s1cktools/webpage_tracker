@@ -11,6 +11,7 @@ const {
   pumpRuntimeVersion,
   resolvePumpRuntimeVersion,
 } = require("./pump");
+const { missingPumpAssetKeys, persistPumpAssets } = require("./pump-assets");
 
 const PUMP_POLL_INTERVAL_MS = 5_000;
 let scanning = false;
@@ -24,6 +25,17 @@ function parseSignals(value) {
     return JSON.parse(value || "{}");
   } catch {
     return {};
+  }
+}
+
+async function persistAssetsSafely(manifest, extensions, options) {
+  try {
+    const result = await persistPumpAssets(manifest, extensions, options);
+    if (result.stored) {
+      console.log(`[pump-app] stored ${result.stored} asset files`);
+    }
+  } catch (error) {
+    console.warn(`[pump-app] asset persist failed: ${error.message}`);
   }
 }
 
@@ -66,12 +78,29 @@ async function scanPumpApp(force = false) {
       runtimeVersion: configuredRuntime,
     });
     if (result.unchanged) {
+      const missingKeys = missingPumpAssetKeys();
+      if (missingKeys.length) {
+        const full = await fetchPumpUpdate({ runtimeVersion: configuredRuntime });
+        if (!full.unchanged && full.manifest) {
+          await persistAssetsSafely(full.manifest, full.extensions, {
+            downloadKeys: missingKeys,
+            sourceUpdateId: full.manifest.id,
+          });
+        }
+      }
       statements.markPumpUnchanged.run();
       return;
     }
 
     const manifest = result.manifest;
     if (previous.baselined && manifest.id === previous.update_id) {
+      const missingKeys = missingPumpAssetKeys();
+      if (missingKeys.length) {
+        await persistAssetsSafely(manifest, result.extensions, {
+          downloadKeys: missingKeys,
+          sourceUpdateId: manifest.id,
+        });
+      }
       statements.markPumpUnchanged.run();
       return;
     }
@@ -104,6 +133,16 @@ async function scanPumpApp(force = false) {
       },
       update
     );
+
+    const addedAssetKeys = changes
+      .filter((change) => change.category === "asset" && change.type === "added")
+      .map((change) => change.value);
+    await persistAssetsSafely(manifest, result.extensions, {
+      bundleBuffer: bundle,
+      downloadKeys: [...new Set([...addedAssetKeys, ...missingPumpAssetKeys()])],
+      sourceUpdateId: manifest.id,
+    });
+
     if (!update) {
       console.log(`[pump-app] baseline saved: ${manifest.id}`);
       return;

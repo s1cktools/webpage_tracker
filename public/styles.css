@@ -424,6 +424,7 @@ button:hover { color: var(--red); }
   border-bottom: 1px solid var(--line-soft);
   font-size: 11px;
 }
+.pump-change.has-preview { align-items: center; }
 .pump-change:last-child { border-bottom: 0; }
 .pump-change:hover { background: var(--surface); }
 .pump-change > span { color: var(--dim); }
@@ -431,6 +432,27 @@ button:hover { color: var(--red); }
   overflow-wrap: anywhere;
   color: var(--text);
   white-space: pre-wrap;
+}
+.pump-asset {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+.pump-asset img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  background: #101010;
+  border: 1px solid var(--line);
+}
+.pump-asset small {
+  display: block;
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 10px;
+  overflow-wrap: anywhere;
 }
 
 .report-subtitle {

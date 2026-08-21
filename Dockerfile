@@ -23,4 +23,4 @@ ENV NODE_ENV=production \
 EXPOSE 3000
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "src/server.js"]
+CMD ["node", "src/index.js"]

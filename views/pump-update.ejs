@@ -56,10 +56,20 @@
                     <span><%= group[type].length %> changes</span>
                   </header>
                   <div class="pump-change-values" tabindex="0">
-                    <% group[type].forEach((value) => { %>
-                      <article class="pump-change">
+                    <% group[type].forEach((item) => { %>
+                      <article class="pump-change<%= item.previewUrl ? " has-preview" : "" %>">
                         <span aria-hidden="true"><%= type === "added" ? "+" : "−" %></span>
-                        <code><%= value %></code>
+                        <% if (item.previewUrl) { %>
+                          <div class="pump-asset">
+                            <img src="<%= item.previewUrl %>" alt="<%= item.label %>" loading="lazy" />
+                            <div>
+                              <code><%= item.label %></code>
+                              <% if (item.label !== item.key) { %><small><%= item.key %></small><% } %>
+                            </div>
+                          </div>
+                        <% } else { %>
+                          <code><%= item.label %></code>
+                        <% } %>
                       </article>
                     <% }) %>
                   </div>
