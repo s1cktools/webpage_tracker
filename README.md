@@ -74,10 +74,11 @@ include a limited set of changed lines. The dashboard can pause the monitor,
 trigger a manual check, and display recent changes or endpoint errors.
 
 For lower CDN detection latency, the same repository can also run stateless
-`binance-probe` services in other regions. A probe runs only the Binance poller
-and a health endpoint. It forwards changed snapshots to the primary service,
-which rejects stale CDN versions, deduplicates matching S3 versions, stores the
-diff, and remains the only service that emits Socket.IO and Discord alerts.
+`binance-probe` services in other regions. Despite the legacy role name, each
+probe runs both the Binance and Pump pollers plus a health endpoint. It forwards
+changed snapshots and Expo manifests to the primary service, which rejects
+stale versions, deduplicates updates, stores the resulting data, and remains the
+only service that emits Socket.IO and Discord alerts.
 
 ## Pump app monitoring
 
@@ -89,7 +90,9 @@ discovered automatically from Google Play every ten minutes. The optional
 `PUMP_RUNTIME_VERSION` variable exists only as an emergency override. Each
 saved update has a readable `/pump/updates/:updateId` detail page. Railway
 builds event links automatically; set `WEBPAGE_TRACKER_PUBLIC_URL` when using
-another host.
+another host. Regional probes use the same Expo update ID deduplication and
+forward new manifests to the primary, where bundles and image assets are
+downloaded once.
 
 ## Event stream
 
@@ -139,9 +142,9 @@ event payloads.
 4. Set `GITHUB_TOKEN` if GitHub monitoring will be used.
 5. Generate a strong `BINANCE_PROBE_SECRET` and a Railway domain for the service.
 
-To add regional Binance probes, create two more Railway services from the same
-repository in different regions. Do not attach volumes. Set these variables on
-each probe:
+To add regional Binance and Pump probes, create two more Railway services from
+the same repository in different regions. Do not attach volumes. Set these
+variables on each probe:
 
 ```text
 APP_ROLE=binance-probe

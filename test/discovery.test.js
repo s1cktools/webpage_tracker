@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const http = require("node:http");
 const {
+  discoverSite,
   excludeTranslatedUrls,
   extractLinks,
   extractPageTitle,
@@ -87,4 +89,35 @@ test("extracts a useful page title from metadata", () => {
   `;
 
   assert.equal(extractPageTitle(html), "Service disruption on Claude services");
+});
+
+test("aborts an in-progress sitemap discovery", async () => {
+  const server = http.createServer((request, response) => {
+    if (request.url === "/robots.txt") {
+      response.end("User-agent: *");
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error("scan deadline reached")),
+    30
+  );
+
+  try {
+    await assert.rejects(
+      discoverSite(
+        `http://127.0.0.1:${port}/`,
+        undefined,
+        undefined,
+        { signal: controller.signal }
+      ),
+      /scan deadline reached/
+    );
+  } finally {
+    clearTimeout(timer);
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

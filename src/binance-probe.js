@@ -4,10 +4,13 @@ const {
   BINANCE_UI_NAMESPACES,
   fetchBinanceNamespace,
 } = require("./binance");
+const { fetchPumpUpdate, resolvePumpRuntimeVersion } = require("./pump");
 
 const BINANCE_PROBE_POLL_INTERVAL_MS = 5_000;
+const PUMP_PROBE_POLL_INTERVAL_MS = 5_000;
 const MAX_CONCURRENCY = 6;
 const POST_TIMEOUT_MS = 10_000;
+const PUMP_POST_TIMEOUT_MS = 190_000;
 
 function probeConfig(environment = process.env) {
   const primaryUrl = String(
@@ -41,6 +44,28 @@ async function postObservation(observation, config, fetchImpl = global.fetch) {
       },
       body: JSON.stringify(observation),
       signal: AbortSignal.timeout(POST_TIMEOUT_MS),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`Primary returned ${response.status}`);
+  }
+}
+
+async function postPumpObservation(
+  observation,
+  config,
+  fetchImpl = global.fetch
+) {
+  const response = await fetchImpl(
+    `${config.primaryUrl}/internal/pump/observations`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.secret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(observation),
+      signal: AbortSignal.timeout(PUMP_POST_TIMEOUT_MS),
     }
   );
   if (!response.ok) {
@@ -107,27 +132,100 @@ function createProbeScanner(config = probeConfig()) {
   return { acknowledgedEtags, scan };
 }
 
+async function scanProbePump(
+  acknowledgedState,
+  config,
+  post = postPumpObservation
+) {
+  const startedAt = Date.now();
+  const runtimeVersion = await resolvePumpRuntimeVersion();
+  const sameRuntime = acknowledgedState.runtimeVersion === runtimeVersion;
+  const result = await fetchPumpUpdate({
+    updateId: sameRuntime ? acknowledgedState.updateId : null,
+    etag: sameRuntime ? acknowledgedState.etag : null,
+    runtimeVersion,
+  });
+  if (result.unchanged) return false;
+
+  await post(
+    {
+      updateId: result.manifest.id,
+      etag: result.etag,
+      runtimeVersion: result.manifest.runtimeVersion || runtimeVersion,
+      publishedAt: result.manifest.createdAt || null,
+      manifest: result.manifest,
+      extensions: result.extensions || {},
+      probeId: config.probeId,
+      observedAt: new Date().toISOString(),
+      scanDurationMs: Date.now() - startedAt,
+    },
+    config
+  );
+  acknowledgedState.runtimeVersion =
+    result.manifest.runtimeVersion || runtimeVersion;
+  acknowledgedState.updateId = result.manifest.id;
+  acknowledgedState.etag = result.etag;
+  return true;
+}
+
+function createPumpProbeScanner(config = probeConfig()) {
+  const acknowledgedState = {
+    runtimeVersion: null,
+    updateId: null,
+    etag: null,
+  };
+  let scanning = false;
+
+  async function scan() {
+    if (scanning) return;
+    scanning = true;
+    try {
+      await scanProbePump(acknowledgedState, config);
+    } catch (error) {
+      console.error("[pump-probe]", error.message);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  return { acknowledgedState, scan };
+}
+
 function startBinanceProbe() {
   const config = probeConfig();
-  const scanner = createProbeScanner(config);
+  const binanceScanner = createProbeScanner(config);
+  const pumpScanner = createPumpProbeScanner(config);
   const app = express();
   const port = Number(process.env.PORT) || 3000;
 
   app.get("/health", (_request, response) => response.status(200).send("ok"));
   app.use((_request, response) => response.status(404).send("Not found"));
   app.listen(port, "0.0.0.0", () => {
-    console.log(`Binance probe ${config.probeId} listening on port ${port}`);
-    scanner.scan();
-    const timer = setInterval(scanner.scan, BINANCE_PROBE_POLL_INTERVAL_MS);
-    timer.unref();
+    console.log(`Regional probe ${config.probeId} listening on port ${port}`);
+    binanceScanner.scan();
+    pumpScanner.scan();
+    const binanceTimer = setInterval(
+      binanceScanner.scan,
+      BINANCE_PROBE_POLL_INTERVAL_MS
+    );
+    const pumpTimer = setInterval(
+      pumpScanner.scan,
+      PUMP_PROBE_POLL_INTERVAL_MS
+    );
+    binanceTimer.unref();
+    pumpTimer.unref();
   });
 }
 
 module.exports = {
   BINANCE_PROBE_POLL_INTERVAL_MS,
+  PUMP_PROBE_POLL_INTERVAL_MS,
+  createPumpProbeScanner,
   createProbeScanner,
   postObservation,
+  postPumpObservation,
   probeConfig,
+  scanProbePump,
   scanProbeNamespace,
   startBinanceProbe,
 };

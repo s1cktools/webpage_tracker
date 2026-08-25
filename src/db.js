@@ -3,6 +3,7 @@ const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 const { diffObjects, getBinanceNamespaceUrl } = require("./binance");
+const { diffPumpSignals } = require("./pump");
 
 const dataDirectory = process.env.DATA_DIR || path.join(process.cwd(), "data");
 fs.mkdirSync(dataDirectory, { recursive: true });
@@ -159,6 +160,20 @@ db.exec(`
     change_count INTEGER NOT NULL,
     changes_json TEXT NOT NULL,
     detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS pump_app_observations (
+    update_id TEXT PRIMARY KEY,
+    runtime_version TEXT NOT NULL,
+    previous_update_id TEXT,
+    published_at TEXT,
+    launch_hash TEXT NOT NULL,
+    first_probe_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    changes_json TEXT,
+    notification_status TEXT NOT NULL DEFAULT 'none'
+      CHECK(notification_status IN ('none', 'pending', 'delivering', 'delivered')),
+    delivery_error TEXT
   );
 
   CREATE TABLE IF NOT EXISTS pump_assets (
@@ -557,6 +572,42 @@ const statements = {
       SELECT update_id FROM pump_app_updates ORDER BY detected_at DESC LIMIT 50
     )
   `),
+  insertPumpObservation: db.prepare(`
+    INSERT OR IGNORE INTO pump_app_observations (
+      update_id, runtime_version, previous_update_id, published_at,
+      launch_hash, first_probe_id, observed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `),
+  getPumpObservation: db.prepare(`
+    SELECT * FROM pump_app_observations WHERE update_id = ?
+  `),
+  finishPumpObservation: db.prepare(`
+    UPDATE pump_app_observations
+    SET changes_json = ?, notification_status = ?
+    WHERE update_id = ?
+  `),
+  claimPumpNotification: db.prepare(`
+    UPDATE pump_app_observations
+    SET notification_status = 'delivering', delivery_error = NULL
+    WHERE update_id = ? AND notification_status = 'pending'
+  `),
+  markPumpNotificationDelivered: db.prepare(`
+    UPDATE pump_app_observations
+    SET notification_status = 'delivered', delivery_error = NULL
+    WHERE update_id = ?
+  `),
+  markPumpNotificationFailed: db.prepare(`
+    UPDATE pump_app_observations
+    SET notification_status = 'pending', delivery_error = ?
+    WHERE update_id = ?
+  `),
+  pendingPumpNotifications: db.prepare(`
+    SELECT update_id, first_probe_id, observed_at
+    FROM pump_app_observations
+    WHERE notification_status = 'pending'
+    ORDER BY observed_at
+  `),
   upsertPumpAsset: db.prepare(`
     INSERT INTO pump_assets (
       asset_key, name, file_extension, content_type,
@@ -602,6 +653,10 @@ const statements = {
 statements.ensurePumpState.run();
 db.exec(`
   UPDATE binance_ui_observations
+  SET notification_status = 'pending'
+  WHERE notification_status = 'delivering';
+
+  UPDATE pump_app_observations
   SET notification_status = 'pending'
   WHERE notification_status = 'delivering'
 `);
@@ -926,6 +981,135 @@ function savePumpUpdate(state, update) {
   }
 }
 
+function inspectPumpObservation(updateId, publishedAt) {
+  if (statements.getPumpObservation.get(updateId)) return "duplicate";
+  const current = statements.getPumpState.get();
+  if (current.baselined && current.update_id === updateId) return "unchanged";
+
+  const currentTime = Date.parse(current.published_at || "");
+  const incomingTime = Date.parse(publishedAt || "");
+  if (
+    current.baselined &&
+    Number.isFinite(currentTime) &&
+    (!Number.isFinite(incomingTime) || incomingTime <= currentTime)
+  ) {
+    return "stale";
+  }
+  return "new";
+}
+
+function applyPumpObservation(observation) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const status = inspectPumpObservation(
+      observation.updateId,
+      observation.publishedAt
+    );
+    if (status !== "new") {
+      db.exec("COMMIT");
+      return { status };
+    }
+
+    const previous = statements.getPumpState.get();
+    const inserted = statements.insertPumpObservation.run(
+      observation.updateId,
+      observation.runtimeVersion,
+      previous.update_id || null,
+      observation.publishedAt || null,
+      observation.launchHash,
+      observation.probeId,
+      observation.observedAt
+    );
+    if (!inserted.changes) {
+      db.exec("COMMIT");
+      return { status: "duplicate" };
+    }
+
+    let previousSignals = {};
+    if (previous.baselined) {
+      previousSignals = JSON.parse(previous.signals_json || "{}");
+    }
+    const changes = previous.baselined
+      ? diffPumpSignals(previousSignals, observation.signals)
+      : [];
+
+    statements.savePumpState.run(
+      observation.runtimeVersion,
+      observation.updateId,
+      observation.etag || null,
+      observation.launchHash,
+      observation.bundleHash,
+      JSON.stringify(observation.signals),
+      observation.publishedAt || null
+    );
+
+    const update = previous.baselined
+      ? {
+          changes,
+          launchHash: observation.launchHash,
+          previousUpdateId: previous.update_id,
+          publishedAt: observation.publishedAt,
+          runtimeVersion: observation.runtimeVersion,
+          updateId: observation.updateId,
+        }
+      : null;
+    if (update) {
+      statements.insertPumpUpdate.run(
+        update.updateId,
+        update.runtimeVersion,
+        update.previousUpdateId,
+        update.publishedAt,
+        update.launchHash,
+        update.changes.length,
+        JSON.stringify(update.changes)
+      );
+      statements.trimPumpUpdates.run();
+    }
+    statements.finishPumpObservation.run(
+      update ? JSON.stringify(changes) : null,
+      update ? "pending" : "none",
+      observation.updateId
+    );
+    db.exec("COMMIT");
+    return {
+      status: previous.baselined ? "accepted" : "baselined",
+      update,
+    };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function claimPumpNotification(updateId) {
+  const result = statements.claimPumpNotification.run(updateId);
+  if (!result.changes) return null;
+  const row = statements.getPumpObservation.get(updateId);
+  return {
+    changes: JSON.parse(row.changes_json || "[]"),
+    launchHash: row.launch_hash,
+    previousUpdateId: row.previous_update_id,
+    publishedAt: row.published_at,
+    runtimeVersion: row.runtime_version,
+    updateId: row.update_id,
+  };
+}
+
+function markPumpNotificationDelivered(updateId) {
+  statements.markPumpNotificationDelivered.run(updateId);
+}
+
+function markPumpNotificationFailed(updateId, error) {
+  statements.markPumpNotificationFailed.run(
+    String(error?.message || error).slice(0, 500),
+    updateId
+  );
+}
+
+function listPendingPumpNotifications() {
+  return statements.pendingPumpNotifications.all();
+}
+
 function createAlertReport(kind, title, payload) {
   const id = randomUUID();
   const itemCount = Array.isArray(payload?.items) ? payload.items.length : 0;
@@ -954,10 +1138,16 @@ module.exports = {
   addGithubLog,
   addBinanceChanges,
   applyBinanceObservation,
+  applyPumpObservation,
   claimBinanceNotification,
+  claimPumpNotification,
   createAlertReport,
+  inspectPumpObservation,
   listPendingBinanceNotifications,
+  listPendingPumpNotifications,
   markBinanceNotificationDelivered,
   markBinanceNotificationFailed,
+  markPumpNotificationDelivered,
+  markPumpNotificationFailed,
   savePumpUpdate,
 };

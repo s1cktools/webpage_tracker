@@ -11,6 +11,11 @@ const TRANSLATED_PATH_PREFIXES = new Set([
   "ko", "nl", "pl", "pt", "ru", "tr", "uk", "vi", "zh",
 ]);
 
+function requestSignal(timeoutMs, signal) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 function normalizeSiteUrl(value) {
   const raw = String(value || "").trim();
   const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
@@ -48,11 +53,11 @@ function isPrivateIp(hostname) {
   );
 }
 
-async function fetchText(url, accept = "*/*") {
+async function fetchText(url, accept = "*/*", signal) {
   const response = await fetch(url, {
     headers: { "user-agent": USER_AGENT, accept },
     redirect: "follow",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: requestSignal(REQUEST_TIMEOUT_MS, signal),
   });
 
   if (!response.ok) throw new Error(`${response.status} ${response.statusText} at ${url}`);
@@ -113,11 +118,11 @@ function extractPageTitle(html) {
   return title ? String(title).replace(/\s+/g, " ").trim().slice(0, 200) : "";
 }
 
-async function fetchPageTitle(url) {
+async function fetchPageTitle(url, signal) {
   const response = await fetch(url, {
     headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml" },
     redirect: "follow",
-    signal: AbortSignal.timeout(5_000),
+    signal: requestSignal(5_000, signal),
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
@@ -147,12 +152,16 @@ function extractSitemapEntries(xml, sitemapUrl, rootHostname) {
   return { sitemapUrls, pageUrls };
 }
 
-async function discoverSitemapLocations(siteUrl) {
+async function discoverSitemapLocations(siteUrl, signal) {
   const site = new URL(siteUrl);
   const locations = new Set([new URL("/sitemap.xml", site).toString()]);
 
   try {
-    const { text } = await fetchText(new URL("/robots.txt", site), "text/plain");
+    const { text } = await fetchText(
+      new URL("/robots.txt", site),
+      "text/plain",
+      signal
+    );
     for (const line of text.split(/\r?\n/)) {
       const match = line.match(/^\s*sitemap:\s*(.+?)\s*$/i);
       if (match) locations.add(new URL(match[1], site).toString());
@@ -163,14 +172,20 @@ async function discoverSitemapLocations(siteUrl) {
   return locations;
 }
 
-async function discoverSite(siteUrl, onLog = () => {}, onDiscover = () => {}) {
+async function discoverSite(
+  siteUrl,
+  onLog = () => {},
+  onDiscover = () => {},
+  { signal } = {}
+) {
   const site = new URL(siteUrl);
   const found = new Set([site.toString()]);
   onDiscover(site.toString(), "homepage");
-  const sitemapQueue = [...(await discoverSitemapLocations(siteUrl))];
+  const sitemapQueue = [...(await discoverSitemapLocations(siteUrl, signal))];
   const visitedSitemaps = new Set();
 
   while (sitemapQueue.length && visitedSitemaps.size < MAX_SITEMAPS) {
+    signal?.throwIfAborted();
     const batch = [];
     while (
       sitemapQueue.length &&
@@ -185,7 +200,11 @@ async function discoverSite(siteUrl, onLog = () => {}, onDiscover = () => {}) {
 
     const results = await Promise.allSettled(
       batch.map(async (sitemapUrl) => {
-        const { text } = await fetchText(sitemapUrl, "application/xml,text/xml");
+        const { text } = await fetchText(
+          sitemapUrl,
+          "application/xml,text/xml",
+          signal
+        );
         return extractSitemapEntries(text, sitemapUrl, site.hostname);
       })
     );
@@ -222,8 +241,9 @@ async function discoverSite(siteUrl, onLog = () => {}, onDiscover = () => {}) {
   }
 
   const pageResults = await Promise.allSettled(
-    pagesToInspect.map((url) => fetchText(url, "text/html"))
+    pagesToInspect.map((url) => fetchText(url, "text/html", signal))
   );
+  signal?.throwIfAborted();
   for (const [index, result] of pageResults.entries()) {
     if (result.status !== "fulfilled") {
       onLog("warn", `page ${pagesToInspect[index]}: ${result.reason.message}`);

@@ -14,6 +14,7 @@ const {
   isAuthorizedProbe,
   processBinanceObservation,
 } = require("./binance-observations");
+const { processPumpObservation } = require("./pump-observations");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { attachEventStream } = require("./event-stream");
 const {
@@ -68,6 +69,27 @@ app.post(
     } catch (error) {
       const invalid = /^(Unknown|Invalid|Missing)/.test(error.message);
       console.error("[binance-ingest]", error.message);
+      return response
+        .status(invalid ? 400 : 500)
+        .json({ error: invalid ? error.message : "Observation processing failed" });
+    }
+  }
+);
+
+app.post(
+  "/internal/pump/observations",
+  (request, response, next) => {
+    if (isAuthorizedProbe(request.headers.authorization)) return next();
+    return response.status(401).json({ error: "Unauthorized" });
+  },
+  express.json({ limit: "10mb" }),
+  async (request, response) => {
+    try {
+      const result = await processPumpObservation(request.body);
+      return response.status(202).json({ status: result.status });
+    } catch (error) {
+      const invalid = /^(Invalid|Missing|Pump updateId)/.test(error.message);
+      console.error("[pump-ingest]", error.message);
       return response
         .status(invalid ? 400 : 500)
         .json({ error: invalid ? error.message : "Observation processing failed" });

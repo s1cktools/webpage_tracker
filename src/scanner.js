@@ -15,8 +15,10 @@ const { buildDiscordPayload, fallbackTitle } = require("./discord");
 const { buildWebsitePageEvent } = require("./events");
 const { emitTrackerEvent } = require("./event-stream");
 const { saveWebsitePagesReport } = require("./reports");
+const { runWithScanTimeout } = require("./scan-timeout");
 
 const POLL_INTERVAL_MS = 5_000;
+const SCAN_TIMEOUT_MS = 60_000;
 const LOG_INTERVAL_MS = 5 * 60_000;
 const scanning = new Set();
 const lastLogAt = new Map();
@@ -78,19 +80,24 @@ async function scanSite(siteOrId) {
     const issues = [];
     const sources = new Map();
     let baselineBlocked = false;
-    const discoveredUrls = await discoverSite(
-      site.url,
-      (level, message) => {
-        if (level === "warn" || level === "error") {
-          issues.push(message);
-          if (level === "error") baselineBlocked = true;
-        } else {
-          addLog(site.id, level, message);
-        }
-      },
-      (url, source) => {
-        if (!sources.has(url)) sources.set(url, source);
-      }
+    const discoveredUrls = await runWithScanTimeout(
+      (signal) =>
+        discoverSite(
+          site.url,
+          (level, message) => {
+            if (level === "warn" || level === "error") {
+              issues.push(message);
+              if (level === "error") baselineBlocked = true;
+            } else {
+              addLog(site.id, level, message);
+            }
+          },
+          (url, source) => {
+            if (!sources.has(url)) sources.set(url, source);
+          },
+          { signal }
+        ),
+      SCAN_TIMEOUT_MS
     );
     const urls = site.ignore_locales
       ? excludeTranslatedUrls(discoveredUrls)
@@ -177,4 +184,10 @@ function startScanner() {
   timer.unref();
 }
 
-module.exports = { POLL_INTERVAL_MS, scanAll, scanSite, startScanner };
+module.exports = {
+  POLL_INTERVAL_MS,
+  SCAN_TIMEOUT_MS,
+  scanAll,
+  scanSite,
+  startScanner,
+};
