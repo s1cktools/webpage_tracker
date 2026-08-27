@@ -275,6 +275,12 @@ const statements = {
     ORDER BY created_at DESC
   `),
   getSite: db.prepare("SELECT * FROM sites WHERE id = ?"),
+  getSiteByHostnames: db.prepare(`
+    SELECT * FROM sites
+    WHERE lower(hostname) IN (lower(?), lower(?))
+    ORDER BY id
+    LIMIT 1
+  `),
   addSite: db.prepare("INSERT INTO sites (url, hostname, nickname) VALUES (?, ?, ?)"),
   toggleSite: db.prepare(`
     UPDATE sites SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id = ?

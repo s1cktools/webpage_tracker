@@ -14,7 +14,7 @@ const {
   validateHookPayload,
 } = require("../src/certspotter-manager");
 const { buildPayload, getHookUrl } = require("../src/certspotter-hook");
-const { processLiveNames } = require("../src/ct-scanner");
+const { processLiveNames, refreshCertspotterWatchlist } = require("../src/ct-scanner");
 
 test.after(() => {
   db.close();
@@ -25,6 +25,7 @@ test("builds a sorted Cert Spotter watchlist from enabled roots", () => {
   assert.equal(
     buildWatchlist([
       { hostname: "SpaceX.com", enabled: 1 },
+      { hostname: "www.openai.com", enabled: 1 },
       { hostname: "openai.com", enabled: 1 },
       { hostname: "spacex.com", enabled: 1 },
       { hostname: "paused.test", enabled: 0 },
@@ -109,4 +110,29 @@ test("routes direct certificate names through hostname matching and SQLite dedup
 
   await processLiveNames(["auth.example.com"]);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM discovered_subdomains").get().count, 1);
+});
+
+test("does not store the apex or a www twin as a discovered subdomain", async () => {
+  statements.addSite.run("https://www.spacex.com/", "www.spacex.com", "SpaceX WWW");
+  refreshCertspotterWatchlist();
+  await processLiveNames(["spacex.com", "www.spacex.com", "auth.spacex.com"]);
+  const stored = db
+    .prepare(
+      "SELECT hostname FROM discovered_subdomains WHERE hostname LIKE '%spacex.com' ORDER BY hostname"
+    )
+    .all();
+  assert.deepEqual(
+    stored.map((row) => row.hostname),
+    ["auth.spacex.com"]
+  );
+});
+
+test("records a hostname once when www and apex sites both exist", async () => {
+  statements.addSite.run("https://www.example.com/", "www.example.com", "WWW Example");
+  refreshCertspotterWatchlist();
+  await processLiveNames(["foo.example.com"]);
+  const rows = db
+    .prepare("SELECT site_id, hostname FROM discovered_subdomains WHERE hostname = ?")
+    .all("foo.example.com");
+  assert.equal(rows.length, 1);
 });

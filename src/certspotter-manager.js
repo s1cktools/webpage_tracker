@@ -4,7 +4,7 @@ const path = require("node:path");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { dataDirectory, statements } = require("./db");
-const { normalizeCtName } = require("./ct");
+const { canonicalSiteHostname } = require("./ct");
 
 const CERTSPOTTER_BINARY = "certspotter";
 const CERTSPOTTER_HEALTH_INTERVAL = "5m";
@@ -35,7 +35,7 @@ function buildWatchlist(sites) {
   const roots = new Set();
   for (const site of sites || []) {
     if (!site?.enabled) continue;
-    const hostname = normalizeCtName(site.hostname)?.hostname;
+    const hostname = canonicalSiteHostname(site.hostname);
     if (hostname) roots.add(`.${hostname}`);
   }
   roots.add(CERTSPOTTER_CANARY);

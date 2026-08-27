@@ -15,6 +15,7 @@ const {
   processBinanceObservation,
 } = require("./binance-observations");
 const { processPumpObservation } = require("./pump-observations");
+const { canonicalSiteHostname, siteHostnameAliases } = require("./ct");
 const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
 const { attachEventStream } = require("./event-stream");
 const {
@@ -285,7 +286,12 @@ app.post("/github-targets/:id/delete", (request, response) => {
 app.post("/sites", (request, response) => {
   try {
     const url = normalizeSiteUrl(request.body.url);
-    const hostname = new URL(url).hostname;
+    const hostname = canonicalSiteHostname(new URL(url).hostname);
+    if (!hostname) throw new Error("Only public website hostnames are supported.");
+    const aliases = siteHostnameAliases(hostname);
+    if (statements.getSiteByHostnames.get(aliases[0], aliases[1] || aliases[0])) {
+      throw new Error("That site is already being tracked.");
+    }
     const nickname = String(request.body.nickname || hostname)
       .trim()
       .slice(0, 40);

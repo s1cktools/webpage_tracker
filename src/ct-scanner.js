@@ -5,8 +5,10 @@ const {
   statements,
 } = require("./db");
 const {
-  fetchCrtShNames,
-  isSubdomainOf,
+  canonicalSiteHostname,
+  fetchHistoricalCtNames,
+  getCrtNameQuota,
+  isConcreteSubdomainOf,
   normalizeCtName,
   resolveDnsStatus,
 } = require("./ct");
@@ -22,7 +24,8 @@ const { emitTrackerEvent } = require("./event-stream");
 const { saveSubdomainsReport } = require("./reports");
 
 const CT_SWEEP_INTERVAL_MS = 6 * 60 * 60_000;
-const CRT_REQUEST_GAP_MS = 13_000;
+const CRT_NAME_RECHECK_MS = 24 * 60 * 60_000;
+const CRT_NAME_REQUEST_GAP_MS = 250;
 
 let processing = Promise.resolve();
 let crtQueue = Promise.resolve();
@@ -46,15 +49,48 @@ function getCtStatus() {
   return { ...ctStatus, monitor: getCertspotterManagerStatus() };
 }
 
-function queueCrtRequest(task) {
+function parsedTimestamp(value) {
+  if (!value) return NaN;
+  const iso = String(value).includes("T") ? String(value) : String(value).replace(" ", "T");
+  return Date.parse(iso.endsWith("Z") ? iso : `${iso}Z`);
+}
+
+function queueCrtRequest(task, gapMs = CRT_NAME_REQUEST_GAP_MS) {
   const run = crtQueue.catch(() => {}).then(async () => {
     const wait = Math.max(0, nextCrtRequestAt - Date.now());
     if (wait) await delay(wait);
-    nextCrtRequestAt = Date.now() + CRT_REQUEST_GAP_MS;
+    nextCrtRequestAt = Date.now() + gapMs;
     return task();
   });
   crtQueue = run.catch(() => {});
   return run;
+}
+
+function shouldRecheckCtHistory(site) {
+  if (!site.ct_history_baselined) return true;
+  const checkedAt = parsedTimestamp(site.ct_last_checked_at);
+  if (!Number.isFinite(checkedAt)) return true;
+  return Date.now() - checkedAt >= CRT_NAME_RECHECK_MS;
+}
+
+function collapseWwwAliasSites(sites) {
+  const chosen = new Map();
+  for (const site of sites) {
+    const root = canonicalSiteHostname(site.hostname);
+    if (!root) continue;
+    const existing = chosen.get(root);
+    if (!existing) {
+      chosen.set(root, site);
+      continue;
+    }
+    const existingWww = String(existing.hostname).toLowerCase().startsWith("www.");
+    const siteWww = String(site.hostname).toLowerCase().startsWith("www.");
+    if (existingWww && !siteWww) chosen.set(root, site);
+    else if (existingWww === siteWww && Number(site.id) < Number(existing.id)) {
+      chosen.set(root, site);
+    }
+  }
+  return [...chosen.values()];
 }
 
 function pumpDnsQueue() {
@@ -123,7 +159,10 @@ async function processCtEntries(siteOrId, entries, source, options = {}) {
   const relevant = [
     ...new Map(
       entries
-        .filter((entry) => !entry.wildcard && isSubdomainOf(entry.hostname, site.hostname))
+        .filter(
+          (entry) =>
+            !entry.wildcard && isConcreteSubdomainOf(entry.hostname, site.hostname)
+        )
         .map((entry) => [entry.hostname, entry])
     ).values(),
   ];
@@ -186,10 +225,12 @@ async function scanCtSite(siteOrId) {
   ctScanning.add(site.id);
   const historyPending = !site.ct_history_baselined;
   try {
-    const entries = await queueCrtRequest(() => fetchCrtShNames(site.hostname));
+    const { entries, source } = await queueCrtRequest(() =>
+      fetchHistoricalCtNames(site.hostname, { allowFallback: historyPending })
+    );
     const currentSite = statements.getSite.get(site.id);
     if (!currentSite || !currentSite.enabled) return;
-    await processCtEntries(currentSite, entries, "crt.sh", {
+    await processCtEntries(currentSite, entries, source, {
       forceBaseline: historyPending,
     });
     const completedSite = statements.getSite.get(site.id);
@@ -222,7 +263,13 @@ async function scanCtSite(siteOrId) {
 }
 
 async function scanAllCtSites() {
-  for (const site of statements.activeSites.all()) {
+  const sites = statements.activeSites.all().sort(
+    (left, right) => Number(left.ct_history_baselined) - Number(right.ct_history_baselined)
+  );
+  for (const site of sites) {
+    if (!shouldRecheckCtHistory(site)) continue;
+    const quota = getCrtNameQuota();
+    if (site.ct_history_baselined && quota.remaining === 0) continue;
     await scanCtSite(site);
   }
 }
@@ -238,12 +285,13 @@ function processLiveNames(names) {
   const entries = names.map(normalizeCtName).filter(Boolean);
   ctStatus.lastMessageAt = new Date().toISOString();
   if (!entries.length) return Promise.resolve();
-  const sites = getActiveSitesCached();
+  const sites = collapseWwwAliasSites(getActiveSitesCached());
   const matches = sites
     .map((site) => ({
       site,
       entries: entries.filter(
-        (entry) => !entry.wildcard && isSubdomainOf(entry.hostname, site.hostname)
+        (entry) =>
+          !entry.wildcard && isConcreteSubdomainOf(entry.hostname, site.hostname)
       ),
     }))
     .filter((group) => group.entries.length);
@@ -293,6 +341,7 @@ function startCtScanner() {
 
 module.exports = {
   CT_SWEEP_INTERVAL_MS,
+  collapseWwwAliasSites,
   getCtStatus,
   handleCertspotterEvent,
   processCtEntries,

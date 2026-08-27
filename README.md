@@ -25,12 +25,20 @@ docker run --rm -p 3000:3000 -v pagepulse-data:/data pagepulse
 
 Every enabled website also watches Certificate Transparency for newly issued
 certificate hostnames below its tracked root. For example, a tracked
-`spacex.com` will match `auth.spacex.com`. PagePulse runs the open-source
+`spacex.com` will match `auth.spacex.com`. Adding `www.spacex.com` is treated as
+the same site: the apex is stored once, `www` is not recorded as a subdomain,
+and Cert Spotter watches `.spacex.com`. PagePulse runs the open-source
 Cert Spotter monitor inside its container and tails the Chrome and Apple log
-lists directly, including classic RFC 6962 and modern static-ct-api logs. A
-rate-limited crt.sh sweep builds the initial silent baseline and runs every six
-hours as an independent historical cross-check. No CT API key, public relay, or
-Railway variable is required.
+lists directly, including classic RFC 6962 and modern static-ct-api logs. The
+initial silent baseline is seeded from [crt.name](https://crt.name/), a
+deduplicated subdomain index built from the CT firehose plus historical sources.
+That API is free and keyless at 100 requests per IP per day; the same budget is
+shared by their MCP endpoint and by [subfaster](https://github.com/melvinsh/subfaster)'s
+`crt` source. PagePulse calls the HTTP API directly, honors `X-Ratelimit-Remaining`,
+and rechecks each site at most once per day. If crt.name is unavailable while a
+site still needs a baseline, a crt.sh lookup is used as a fallback. Optional
+`CRT_NAME_TOKEN` raises the limit if you are in their closed beta. No other CT
+API key, public relay, or Railway variable is required.
 
 New subdomains are stored separately from page URLs, shown on the dashboard,
 sent to Discord, and emitted as `website_subdomain` events. DNS A/AAAA
@@ -45,9 +53,9 @@ reports lag or log failures through the dashboard. The tracked-domain watchlist
 is rebuilt whenever a site is added, paused, resumed, or removed. A daily
 Cert Spotter test certificate silently exercises the full local hook path.
 
-If crt.sh is temporarily unavailable, direct monitoring still activates after
+If crt.name is temporarily unavailable, direct monitoring still activates after
 that first baseline attempt; the historical baseline is filled silently when
-crt.sh recovers.
+crt.name recovers, or from crt.sh if a fallback lookup succeeds.
 
 ## GitHub monitoring
 
@@ -140,7 +148,8 @@ event payloads.
 2. Add a persistent volume mounted at `/data`.
 3. Set `DASHBOARD_PASSWORD` to protect the public dashboard with HTTP Basic Auth.
 4. Set `GITHUB_TOKEN` if GitHub monitoring will be used.
-5. Generate a strong `BINANCE_PROBE_SECRET` and a Railway domain for the service.
+5. Optionally set `CRT_NAME_TOKEN` if you have crt.name closed-beta access.
+6. Generate a strong `BINANCE_PROBE_SECRET` and a Railway domain for the service.
 
 To add regional Binance and Pump probes, create two more Railway services from
 the same repository in different regions. Do not attach volumes. Set these

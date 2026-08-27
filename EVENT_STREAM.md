@@ -102,7 +102,8 @@ DNS resolution runs afterward, so live events normally report `unchecked`; the
 dashboard record is later updated to `resolved`, `unresolved`, or `unknown`.
 `certspotter` means the app discovered the hostname by directly monitoring the
 browser-recognized RFC 6962 and static CT logs. Historical baseline discoveries
-use `crt.sh` and are not emitted as live events.
+use `crt.name` (or `crt.sh` if that index is unavailable) and are not emitted as
+live events.
 
 ### `github_commit`
 

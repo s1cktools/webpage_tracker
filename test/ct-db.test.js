@@ -49,6 +49,10 @@ test("stores a silent CT baseline and marks later subdomains as new", () => {
       statements.addSite.run("https://delayed.test/", "delayed.test", "Delayed")
         .lastInsertRowid
     );
+    assert.equal(
+      statements.getSiteByHostnames.get("example.com", "www.example.com").id,
+      siteId
+    );
     statements.markCtLiveAfterBaselineError.run("crt.sh timed out", delayedId);
     const delayed = statements.getSite.get(delayedId);
     assert.equal(delayed.ct_baselined, 1);
