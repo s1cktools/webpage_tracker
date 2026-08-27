@@ -3,6 +3,7 @@ const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 const { diffObjects, getBinanceNamespaceUrl } = require("./binance");
+const { canonicalizePageUrl, pageUrlAliases } = require("./discovery");
 const { diffPumpSignals } = require("./pump");
 
 const dataDirectory = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -282,6 +283,15 @@ const statements = {
     LIMIT 1
   `),
   addSite: db.prepare("INSERT INTO sites (url, hostname, nickname) VALUES (?, ?, ?)"),
+  addSiteWithLocales: db.prepare(`
+    INSERT INTO sites (url, hostname, nickname, ignore_locales) VALUES (?, ?, ?, ?)
+  `),
+  updateWebsitePlaybook: db.prepare(`
+    UPDATE sites
+    SET url = ?, hostname = ?, nickname = ?, ignore_locales = ?
+    WHERE id = ?
+  `),
+  setSiteEnabled: db.prepare("UPDATE sites SET enabled = ? WHERE id = ?"),
   toggleSite: db.prepare(`
     UPDATE sites SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id = ?
   `),
@@ -302,6 +312,7 @@ const statements = {
   insertUrl: db.prepare(`
     INSERT OR IGNORE INTO discovered_urls (site_id, url, is_baseline) VALUES (?, ?, ?)
   `),
+  getUrl: db.prepare("SELECT url FROM discovered_urls WHERE site_id = ? AND url = ?"),
   siteUrls: db.prepare("SELECT url FROM discovered_urls WHERE site_id = ?"),
   deleteUrl: db.prepare("DELETE FROM discovered_urls WHERE site_id = ? AND url = ?"),
   recentUrls: db.prepare(`
@@ -676,8 +687,13 @@ function addDiscoveredUrls(siteId, urls, isBaseline = false) {
   db.exec("BEGIN");
   try {
     for (const url of urls) {
-      if (statements.insertUrl.run(siteId, url, isBaseline ? 1 : 0).changes) {
-        inserted.push(url);
+      const canonical = canonicalizePageUrl(url) || url;
+      const alreadySeen = pageUrlAliases(canonical).some(
+        (alias) => statements.getUrl.get(siteId, alias)
+      );
+      if (alreadySeen) continue;
+      if (statements.insertUrl.run(siteId, canonical, isBaseline ? 1 : 0).changes) {
+        inserted.push(canonical);
       }
     }
     db.exec("COMMIT");

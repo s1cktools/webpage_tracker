@@ -99,6 +99,14 @@ h1 {
   letter-spacing: -0.05em;
 }
 
+.command .hint {
+  margin: 0;
+  max-width: 360px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .add-site {
   width: min(100%, 440px);
   height: 38px;

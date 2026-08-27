@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const {
+  canonicalizePageUrl,
   discoverSite,
   excludeTranslatedUrls,
   extractLinks,
@@ -9,6 +10,7 @@ const {
   extractSitemapEntries,
   normalizeDiscoveredUrl,
   normalizeSiteUrl,
+  pageUrlAliases,
 } = require("../src/discovery");
 
 test("normalizes a website entered without a protocol", () => {
@@ -28,8 +30,8 @@ test("keeps same-domain and subdomain links while removing tracking parameters",
   assert.deepEqual(
     [...extractLinks(html, "https://example.com/", "example.com")].sort(),
     [
-      "https://docs.example.com/whats-new",
-      "https://example.com/introducing-gpt-6",
+      "https://docs.example.com/whats-new/",
+      "https://example.com/introducing-gpt-6/",
     ]
   );
 });
@@ -40,7 +42,7 @@ test("extracts pages and nested sitemaps", () => {
     "https://example.com/sitemap.xml",
     "example.com"
   );
-  assert.deepEqual(pages.pageUrls, ["https://example.com/new"]);
+  assert.deepEqual(pages.pageUrls, ["https://example.com/new/"]);
 
   const index = extractSitemapEntries(
     "<sitemapindex><sitemap><loc>/posts.xml</loc></sitemap></sitemapindex>",
@@ -53,7 +55,7 @@ test("extracts pages and nested sitemaps", () => {
 test("drops fragments and external URLs", () => {
   assert.equal(
     normalizeDiscoveredUrl("/docs#intro", "https://example.com", "example.com"),
-    "https://example.com/docs"
+    "https://example.com/docs/"
   );
   assert.equal(
     normalizeDiscoveredUrl("https://elsewhere.com", "https://example.com", "example.com"),
@@ -120,4 +122,23 @@ test("aborts an in-progress sitemap discovery", async () => {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("canonicalizes page URLs with a trailing slash and slash aliases", () => {
+  assert.equal(
+    canonicalizePageUrl("https://openai.com/index/hugging-face-incident-and-the-road-ahead"),
+    "https://openai.com/index/hugging-face-incident-and-the-road-ahead/"
+  );
+  assert.equal(
+    canonicalizePageUrl("https://openai.com/index/hugging-face-incident-and-the-road-ahead/"),
+    "https://openai.com/index/hugging-face-incident-and-the-road-ahead/"
+  );
+  assert.equal(canonicalizePageUrl("https://openai.com/report.pdf"), "https://openai.com/report.pdf");
+  assert.deepEqual(
+    pageUrlAliases("https://openai.com/index/foo").sort(),
+    [
+      "https://openai.com/index/foo",
+      "https://openai.com/index/foo/",
+    ].sort()
+  );
 });

@@ -2,6 +2,8 @@ const cheerio = require("cheerio");
 const net = require("node:net");
 
 const USER_AGENT = "PagePulse/1.0 (+website change monitor)";
+const OPENAI_BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_SITEMAPS = 500;
 const MAX_URLS = 250_000;
@@ -53,9 +55,63 @@ function isPrivateIp(hostname) {
   );
 }
 
-async function fetchText(url, accept = "*/*", signal) {
-  const response = await fetch(url, {
-    headers: { "user-agent": USER_AGENT, accept },
+function isOpenAiHost(hostname) {
+  const host = String(hostname || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "");
+  return host === "openai.com" || host.endsWith(".openai.com");
+}
+
+function withCacheBust(url, now = Date.now()) {
+  const target = new URL(url);
+  target.searchParams.set("t", String(now));
+  return target.toString();
+}
+
+function canonicalizePageUrl(value) {
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    url.hash = "";
+    url.hostname = url.hostname.toLowerCase();
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(utm_|fbclid|gclid)/i.test(key)) url.searchParams.delete(key);
+    }
+    url.pathname = url.pathname.replace(/\/{2,}/g, "/") || "/";
+    const last = url.pathname.split("/").filter(Boolean).at(-1) || "";
+    const looksLikeFile = /\.[a-z0-9]{1,8}$/i.test(last);
+    if (url.pathname !== "/" && !looksLikeFile && !url.pathname.endsWith("/")) {
+      url.pathname += "/";
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function pageUrlAliases(value) {
+  const canonical = canonicalizePageUrl(value);
+  if (!canonical) return [];
+  const aliases = new Set([canonical]);
+  const url = new URL(canonical);
+  if (url.pathname !== "/") {
+    const other = new URL(canonical);
+    other.pathname = other.pathname.endsWith("/")
+      ? other.pathname.slice(0, -1)
+      : `${other.pathname}/`;
+    aliases.add(other.toString());
+  }
+  return [...aliases];
+}
+
+async function fetchText(url, accept = "*/*", signal, options = {}) {
+  const target = options.cacheBust ? withCacheBust(url) : url;
+  const response = await fetch(target, {
+    headers: {
+      "user-agent": options.userAgent || USER_AGENT,
+      accept,
+    },
     redirect: "follow",
     signal: requestSignal(REQUEST_TIMEOUT_MS, signal),
   });
@@ -80,7 +136,7 @@ function normalizeDiscoveredUrl(rawUrl, baseUrl, rootHostname) {
       if (/^(utm_|fbclid|gclid)/i.test(key)) url.searchParams.delete(key);
     }
     url.pathname = url.pathname.replace(/\/{2,}/g, "/");
-    return url.toString();
+    return canonicalizePageUrl(url.toString());
   } catch {
     return null;
   }
@@ -152,7 +208,7 @@ function extractSitemapEntries(xml, sitemapUrl, rootHostname) {
   return { sitemapUrls, pageUrls };
 }
 
-async function discoverSitemapLocations(siteUrl, signal) {
+async function discoverSitemapLocations(siteUrl, signal, fetchOptions = {}) {
   const site = new URL(siteUrl);
   const locations = new Set([new URL("/sitemap.xml", site).toString()]);
 
@@ -160,7 +216,8 @@ async function discoverSitemapLocations(siteUrl, signal) {
     const { text } = await fetchText(
       new URL("/robots.txt", site),
       "text/plain",
-      signal
+      signal,
+      fetchOptions
     );
     for (const line of text.split(/\r?\n/)) {
       const match = line.match(/^\s*sitemap:\s*(.+?)\s*$/i);
@@ -179,9 +236,13 @@ async function discoverSite(
   { signal } = {}
 ) {
   const site = new URL(siteUrl);
+  const openai = isOpenAiHost(site.hostname);
+  const sitemapFetch = openai
+    ? { cacheBust: true, userAgent: OPENAI_BROWSER_UA }
+    : {};
   const found = new Set([site.toString()]);
   onDiscover(site.toString(), "homepage");
-  const sitemapQueue = [...(await discoverSitemapLocations(siteUrl, signal))];
+  const sitemapQueue = [...(await discoverSitemapLocations(siteUrl, signal, sitemapFetch))];
   const visitedSitemaps = new Set();
 
   while (sitemapQueue.length && visitedSitemaps.size < MAX_SITEMAPS) {
@@ -203,7 +264,8 @@ async function discoverSite(
         const { text } = await fetchText(
           sitemapUrl,
           "application/xml,text/xml",
-          signal
+          signal,
+          sitemapFetch
         );
         return extractSitemapEntries(text, sitemapUrl, site.hostname);
       })
@@ -234,39 +296,46 @@ async function discoverSite(
     onLog("warn", `URL limit reached (${MAX_URLS})`);
   }
 
-  const pagesToInspect = [siteUrl];
-  for (const pageUrl of [...found]) {
-    if (pagesToInspect.length >= 20) break;
-    if (pageUrl !== siteUrl) pagesToInspect.push(pageUrl);
-  }
-
-  const pageResults = await Promise.allSettled(
-    pagesToInspect.map((url) => fetchText(url, "text/html", signal))
-  );
-  signal?.throwIfAborted();
-  for (const [index, result] of pageResults.entries()) {
-    if (result.status !== "fulfilled") {
-      onLog("warn", `page ${pagesToInspect[index]}: ${result.reason.message}`);
-      continue;
+  if (!openai) {
+    const pagesToInspect = [siteUrl];
+    for (const pageUrl of [...found]) {
+      if (pagesToInspect.length >= 20) break;
+      if (pageUrl !== siteUrl) pagesToInspect.push(pageUrl);
     }
-    extractLinks(result.value.text, result.value.finalUrl, site.hostname)
-      .forEach((url) => {
-        found.add(url);
-        onDiscover(url, "link");
-      });
+
+    const pageResults = await Promise.allSettled(
+      pagesToInspect.map((url) => fetchText(url, "text/html", signal))
+    );
+    signal?.throwIfAborted();
+    for (const [index, result] of pageResults.entries()) {
+      if (result.status !== "fulfilled") {
+        onLog("warn", `page ${pagesToInspect[index]}: ${result.reason.message}`);
+        continue;
+      }
+      extractLinks(result.value.text, result.value.finalUrl, site.hostname)
+        .forEach((url) => {
+          found.add(url);
+          onDiscover(url, "link");
+        });
+    }
   }
 
   return [...found].slice(0, MAX_URLS).sort();
 }
 
 module.exports = {
+  OPENAI_BROWSER_UA,
+  canonicalizePageUrl,
   discoverSite,
   excludeTranslatedUrls,
   extractLinks,
   extractPageTitle,
   extractSitemapEntries,
   fetchPageTitle,
+  isOpenAiHost,
+  isTranslatedUrl,
   normalizeDiscoveredUrl,
   normalizeSiteUrl,
-  isTranslatedUrl,
+  pageUrlAliases,
+  withCacheBust,
 };

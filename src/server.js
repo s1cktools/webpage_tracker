@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const http = require("node:http");
 const path = require("node:path");
 const express = require("express");
-const { getSetting, pruneDiscoveredUrls, statements } = require("./db");
+const { getSetting, statements } = require("./db");
 const {
   BINANCE_POLL_INTERVAL_MS,
   isBinanceEnabled,
@@ -15,8 +15,7 @@ const {
   processBinanceObservation,
 } = require("./binance-observations");
 const { processPumpObservation } = require("./pump-observations");
-const { canonicalSiteHostname, siteHostnameAliases } = require("./ct");
-const { isTranslatedUrl, normalizeSiteUrl } = require("./discovery");
+const { canonicalSiteHostname } = require("./ct");
 const { attachEventStream } = require("./event-stream");
 const {
   getCtStatus,
@@ -39,7 +38,13 @@ const {
 } = require("./pump-scanner");
 const { decoratePumpChangeGroups, collectAssetKeys, groupPumpChanges } = require("./pump");
 const { getPumpAssetFile, getPumpAssetsByKeys } = require("./pump-assets");
-const { POLL_INTERVAL_MS, scanSite, startScanner } = require("./scanner");
+const { getPlaybook } = require("./websites");
+const {
+  WEBSITE_POLL_INTERVAL_MS,
+  scanWebsiteBySiteId,
+  startWebsiteScanner,
+  syncWebsitePlaybooks,
+} = require("./website-scanner");
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -172,7 +177,10 @@ app.get("/", (request, response) => {
   const webhook = getSetting("discord_webhook_url");
   const ctStatus = getCtStatus();
   response.render("index", {
-    sites: statements.listSites.all(),
+    sites: statements.listSites.all().map((site) => ({
+      ...site,
+      playbook: getPlaybook(canonicalSiteHostname(site.hostname) || site.hostname),
+    })),
     recentUrls: statements.recentUrls.all(30),
     recentSubdomains: statements.recentSubdomains.all(30),
     ctStatus,
@@ -190,7 +198,7 @@ app.get("/", (request, response) => {
     reportCount: statements.countAlertReports.get().count,
     webhookConfigured: Boolean(webhook),
     githubConfigured: Boolean(process.env.GITHUB_TOKEN),
-    pollSeconds: POLL_INTERVAL_MS / 1000,
+    pollSeconds: WEBSITE_POLL_INTERVAL_MS / 1000,
     githubPollSeconds: GITHUB_POLL_INTERVAL_MS / 1000,
     binancePollSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
     pumpPollSeconds: PUMP_POLL_INTERVAL_MS / 1000,
@@ -283,57 +291,15 @@ app.post("/github-targets/:id/delete", (request, response) => {
   response.redirect("/?message=GitHub target removed.");
 });
 
-app.post("/sites", (request, response) => {
-  try {
-    const url = normalizeSiteUrl(request.body.url);
-    const hostname = canonicalSiteHostname(new URL(url).hostname);
-    if (!hostname) throw new Error("Only public website hostnames are supported.");
-    const aliases = siteHostnameAliases(hostname);
-    if (statements.getSiteByHostnames.get(aliases[0], aliases[1] || aliases[0])) {
-      throw new Error("That site is already being tracked.");
-    }
-    const nickname = String(request.body.nickname || hostname)
-      .trim()
-      .slice(0, 40);
-    const result = statements.addSite.run(url, hostname, nickname || hostname);
-    scanSite(Number(result.lastInsertRowid));
-    scanCtSite(Number(result.lastInsertRowid));
-    refreshCertspotterWatchlist();
-    response.redirect("/?message=Site added. Building its baseline now.");
-  } catch (error) {
-    const message =
-      String(error.message).includes("UNIQUE constraint failed")
-        ? "That site is already being tracked."
-        : error.message;
-    response.redirect(`/?error=${encodeURIComponent(message)}`);
-  }
-});
-
 app.post("/sites/:id/toggle", (request, response) => {
   statements.toggleSite.run(Number(request.params.id));
   refreshCertspotterWatchlist();
   response.redirect("/?message=Site status updated.");
 });
 
-app.post("/sites/:id/locales", (request, response) => {
-  const siteId = Number(request.params.id);
-  statements.toggleLocales.run(siteId);
-  const site = statements.getSite.get(siteId);
-  const removed = site?.ignore_locales
-    ? pruneDiscoveredUrls(siteId, isTranslatedUrl)
-    : 0;
-  response.redirect(
-    `/?message=${encodeURIComponent(
-      site?.ignore_locales
-        ? `English-only enabled. Removed ${removed} translated URLs.`
-        : "All languages enabled."
-    )}`
-  );
-});
-
 app.post("/sites/:id/scan", (request, response) => {
   const siteId = Number(request.params.id);
-  scanSite(siteId);
+  scanWebsiteBySiteId(siteId, { force: true });
   scanCtSite(siteId);
   response.redirect("/?message=Scan started.");
 });
@@ -401,7 +367,9 @@ attachEventStream(httpServer);
 
 httpServer.listen(port, "0.0.0.0", () => {
   console.log(`PagePulse listening on http://localhost:${port}`);
-  startScanner();
+  syncWebsitePlaybooks();
+  refreshCertspotterWatchlist();
+  startWebsiteScanner();
   startCtScanner();
   startGithubScanner();
   startBinanceScanner();

@@ -1,7 +1,7 @@
 # PagePulse
 
-A small Node.js dashboard that watches website sitemaps and public links, stores
-discovered URLs in SQLite, and sends batched Discord webhook alerts for new URLs.
+A small Node.js dashboard that watches a hardcoded list of website feeds, stores
+discovered URLs in SQLite, and sends Discord webhook alerts for new pages.
 
 ## Run locally
 
@@ -10,8 +10,10 @@ npm install
 npm start
 ```
 
-Open `http://localhost:3000`, save a Discord webhook, and add a website. The
-first scan silently records existing URLs; later discoveries trigger alerts.
+Open `http://localhost:3000` and save a Discord webhook. Website targets are
+hardcoded in `src/websites.js` — there is no add-a-domain form. On startup the
+app upserts that watchlist, silently baselines each feed, and later discoveries
+trigger alerts.
 The web app and periodic scanners run directly with Node. The direct
 Certificate Transparency monitor is included in the production Docker image;
 use Docker locally when testing that process end to end:
@@ -50,7 +52,8 @@ Cert Spotter stores a cursor for every CT log under the same persistent data
 directory as PagePulse. It resumes and catches up after restarts without losing
 entries, reloads the browser log lists, audits append-only consistency, and
 reports lag or log failures through the dashboard. The tracked-domain watchlist
-is rebuilt whenever a site is added, paused, resumed, or removed. A daily
+is rebuilt whenever the hardcoded watchlist is synced or a site is paused or
+resumed. A daily
 Cert Spotter test certificate silently exercises the full local hook path.
 
 If crt.name is temporarily unavailable, direct monitoring still activates after
@@ -173,10 +176,25 @@ SQLite is a single-file database. Its volume preserves both `tracker.db` and
 Cert Spotter's per-log cursor state. Additional services must use
 `APP_ROLE=binance-probe`, not another primary replica.
 
-## Discovery limits
+## Website playbooks
 
-There is no universal API listing every URL on a domain. PagePulse detects URLs
-exposed in sitemaps or linked from inspected public pages. Completely hidden or
-unlinked URLs cannot be discovered reliably. Certificate Transparency improves
-subdomain discovery but only covers hostnames included in publicly logged TLS
-certificates; it is not a complete DNS inventory.
+Each watched site has a hardcoded feed list in `src/websites.js`. The generic
+“add any domain” crawler is gone. To watch another host, add a playbook there
+and restart. Trailing-slash and no-slash versions of the same path are stored
+once.
+
+| Site | What we poll |
+| --- | --- |
+| OpenAI | [news RSS](https://openai.com/news/rss.xml) + every `/sitemap.xml/{category}/` file |
+| SpaceX | [updates CMS JSON](https://content.spacex.com/api/spacex-website/updates) — HTML has no sitemap |
+| BNB Chain | blog sitemap (posts) + `sitemap-0.xml` + opbnb/greenfield sitemaps. No RSS. |
+| White House | six category RSS feeds (news, articles, actions, briefings, fact sheets, remarks) plus `post-sitemap{,2,3}.xml` and `page-sitemap.xml`. Taxonomy/gallery/EOP sitemaps are skipped. |
+| Grok | `/sitemap.xml` — eight product pages, no blog |
+| x.ai | `/news` HTML listing (server-rendered) + site sitemap + [docs.x.ai sitemap](https://docs.x.ai/sitemap.xml). No official RSS. |
+| pump.fun | marketing `/sitemap.xml` (docs have no XML; the mobile app has its own monitor) |
+| Solana | [news RSS](https://solana.com/news/rss.xml) + news sitemap + podcasts sitemap + full site sitemap (English paths only) |
+| Anthropic | `/news` HTML listing + one live sitemap (news, engineering, research). No official RSS. |
+| Claude | `/blog` HTML listing + site sitemap + docs sitemap (English paths only) |
+
+Certificate Transparency still watches subdomains of these roots. Completely
+hidden or unlisted URLs cannot be discovered.

@@ -84,6 +84,8 @@ Every event has exactly four top-level fields:
 }
 ```
 
+`discovery_source` is `rss`, `sitemap`, `link`, or `cms`. OpenAI, Solana, and White House news use `rss`. SpaceX updates use `cms`. x.ai / Anthropic / Claude listing pages use `link`. Other playbook pages use `sitemap`.
+
 ### `website_subdomain`
 
 ```json

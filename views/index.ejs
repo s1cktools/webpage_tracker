@@ -32,12 +32,7 @@
           <span class="kicker">WATCH</span>
           <h1>domains</h1>
         </div>
-        <form class="add-site" method="post" action="/sites">
-          <span class="prompt">$</span>
-          <input class="nickname-input" name="nickname" type="text" aria-label="Nickname" placeholder="OpenAI" maxlength="40">
-          <input id="site-url" name="url" type="text" inputmode="url" aria-label="Domain" placeholder="openai.com" required>
-          <button type="submit">add</button>
-        </form>
+        <p class="hint">hardcoded playbooks · add a site in <code>src/websites.js</code></p>
       </section>
 
       <% if (message) { %><div class="notice"><span>ok</span> <%= message %></div><% } %>
@@ -70,7 +65,7 @@
                 <span class="signal <%= site.enabled ? '' : 'idle' %>"></span>
                 <a href="<%= site.url %>" target="_blank" rel="noreferrer">
                   <b><%= site.nickname || site.hostname %></b>
-                  <small><%= site.hostname %></small>
+                  <small><%= site.playbook ? site.playbook.summary : site.hostname %></small>
                 </a>
                 <% if (site.last_error || site.ct_last_error) { %><span class="row-error" title="<%= site.last_error || site.ct_last_error %>">!</span><% } %>
               </div>
@@ -82,15 +77,14 @@
                 <form method="post" action="/sites/<%= site.id %>/scan">
                   <button title="Scan now">scan</button>
                 </form>
-                <form method="post" action="/sites/<%= site.id %>/locales">
-                  <button title="Toggle translated paths"><%= site.ignore_locales ? "lang:en" : "lang:all" %></button>
-                </form>
                 <form method="post" action="/sites/<%= site.id %>/toggle">
                   <button><%= site.enabled ? "pause" : "resume" %></button>
                 </form>
+                <% if (!site.playbook) { %>
                 <form method="post" action="/sites/<%= site.id %>/delete" onsubmit="return confirm('Remove <%= site.hostname %>?')">
                   <button class="remove">rm</button>
                 </form>
+                <% } %>
               </div>
             </article>
           <% }) %>
