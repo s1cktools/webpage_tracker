@@ -1,14 +1,9 @@
 const {
-  addGithubItems,
   addGithubLog,
-  getSetting,
   statements,
 } = require("./db");
-const { buildGitHubPayload } = require("./discord");
-const { buildGithubEvent } = require("./events");
-const { emitTrackerEvent } = require("./event-stream");
 const { fetchGitHubTarget, GitHubApiError } = require("./github");
-const { saveGithubReport } = require("./reports");
+const { ingestGithubItems } = require("./observations");
 
 const GITHUB_POLL_INTERVAL_MS = 5_000;
 const LOG_INTERVAL_MS = 5 * 60_000;
@@ -35,21 +30,6 @@ function applyRateLimitBackoff(error) {
   blockedUntil = Math.max(blockedUntil, retryAt);
 }
 
-async function sendGitHubAlert(target, items, scanDurationMs, reportUrl) {
-  const webhookUrl = getSetting("discord_webhook_url");
-  if (!webhookUrl || items.length === 0) return;
-
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      buildGitHubPayload(target, items, scanDurationMs, new Date(), reportUrl)
-    ),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`Discord webhook returned ${response.status}`);
-}
-
 async function scanGitHubTarget(targetOrId) {
   const target =
     typeof targetOrId === "object"
@@ -62,23 +42,10 @@ async function scanGitHubTarget(targetOrId) {
   try {
     const result = await fetchGitHubTarget(target);
     if (!result.unchanged) {
-      const inserted = addGithubItems(target.id, result.items, !target.baselined);
+      const ingested = await ingestGithubItems(target, result.items, { startedAt });
+      const inserted = ingested.items;
       if (target.baselined) {
         if (inserted.length) {
-          const detectedAt = new Date();
-          const report = saveGithubReport(target, inserted);
-          for (const item of inserted) {
-            emitTrackerEvent(
-              buildGithubEvent(
-                target,
-                item,
-                detectedAt,
-                report.url,
-                inserted.length
-              )
-            );
-          }
-          await sendGitHubAlert(target, inserted, Date.now() - startedAt, report.url);
           const noun =
             target.kind === "repo"
               ? inserted.length === 1 ? "commit" : "commits"

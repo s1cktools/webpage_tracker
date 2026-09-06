@@ -14,9 +14,17 @@ const {
   isAuthorizedProbe,
   processBinanceObservation,
 } = require("./binance-observations");
+const {
+  addBinanceSquareTargetFromInput,
+  isBinanceSquareEnabled,
+  listPublicBinanceSquareTargets,
+  scanBinanceSquareTarget,
+  startBinanceSquareScanner,
+  updateBinanceSquareTarget,
+} = require("./binance-square-scanner");
 const { processPumpObservation } = require("./pump-observations");
 const { canonicalSiteHostname } = require("./ct");
-const { attachEventStream } = require("./event-stream");
+const { attachEventStream, tokensMatch } = require("./event-stream");
 const {
   getCtStatus,
   refreshCertspotterWatchlist,
@@ -36,8 +44,16 @@ const {
   scanPumpApp,
   startPumpScanner,
 } = require("./pump-scanner");
+const {
+  ROBINHOOD_POLL_INTERVAL_MS,
+  isRobinhoodEnabled,
+  scanRobinhood,
+  startRobinhoodScanner,
+} = require("./robinhood-scanner");
 const { decoratePumpChangeGroups, collectAssetKeys, groupPumpChanges } = require("./pump");
 const { getPumpAssetFile, getPumpAssetsByKeys } = require("./pump-assets");
+const { applyObservations } = require("./observations");
+const { getWatchlist } = require("./watchlist");
 const { getPlaybook } = require("./websites");
 const {
   WEBSITE_POLL_INTERVAL_MS,
@@ -45,6 +61,14 @@ const {
   startWebsiteScanner,
   syncWebsitePlaybooks,
 } = require("./website-scanner");
+const {
+  addYouTubeChannelFromInput,
+  isYouTubeEnabled,
+  listPublicYouTubeChannels,
+  scanYouTubeChannel,
+  startYouTubeScanner,
+  updateYouTubeChannel,
+} = require("./youtube-scanner");
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -52,7 +76,33 @@ const port = Number(process.env.PORT) || 3000;
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "..", "views"));
 app.use(express.urlencoded({ extended: false }));
+app.use("/v1", express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "..", "public")));
+
+function requireScrapeToken(request, response, next) {
+  const expected = process.env.EVENT_STREAM_TOKEN;
+  if (!expected) {
+    return response.status(503).json({ error: "EVENT_STREAM_TOKEN is not configured" });
+  }
+  const authorization = String(request.headers.authorization || "");
+  const provided = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!tokensMatch(provided, expected)) {
+    return response.status(401).json({ error: "Unauthorized" });
+  }
+  return next();
+}
+
+function sendYouTubeError(response, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = message.includes("already") || message.includes("UNIQUE") ? 409 : 400;
+  return response.status(status).json({ error: message });
+}
+
+function sendSquareError(response, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = message.includes("limit") ? 409 : 400;
+  return response.status(status).json({ error: message });
+}
 
 app.get("/health", (request, response) => {
   response.status(200).send("ok");
@@ -102,6 +152,168 @@ app.post(
     }
   }
 );
+
+app.get("/v1/youtube/channels", requireScrapeToken, (_request, response) => {
+  response.json({ channels: listPublicYouTubeChannels() });
+});
+
+app.post("/v1/youtube/channels", requireScrapeToken, async (request, response) => {
+  try {
+    const channel = typeof request.body?.channel === "string" ? request.body.channel : "";
+    if (channel.trim().length < 3) {
+      return response.status(400).json({
+        error: "channel must be a YouTube handle, URL, or channel ID",
+      });
+    }
+    const result = await addYouTubeChannelFromInput(
+      channel,
+      request.body.pollIntervalSeconds
+    );
+    return response.status(result.created ? 201 : 200).json(result);
+  } catch (error) {
+    return sendYouTubeError(response, error);
+  }
+});
+
+app.get("/v1/youtube/channels/:channelId", requireScrapeToken, (request, response) => {
+  const channel = listPublicYouTubeChannels().find(
+    (item) => item.channelId === request.params.channelId
+  );
+  if (!channel) return response.status(404).json({ error: "Channel not found" });
+  return response.json({ channel });
+});
+
+app.patch("/v1/youtube/channels/:channelId", requireScrapeToken, (request, response) => {
+  const update = {};
+  if (request.body?.pollIntervalSeconds !== undefined) {
+    if (![2, 15, 30].includes(Number(request.body.pollIntervalSeconds))) {
+      return response.status(400).json({
+        error: "pollIntervalSeconds must be 2, 15, or 30",
+      });
+    }
+    update.pollIntervalSeconds = Number(request.body.pollIntervalSeconds);
+  }
+  if (request.body?.aiAnalysisEnabled !== undefined) {
+    if (typeof request.body.aiAnalysisEnabled !== "boolean") {
+      return response.status(400).json({
+        error: "aiAnalysisEnabled must be a boolean",
+      });
+    }
+    update.aiAnalysisEnabled = request.body.aiAnalysisEnabled;
+  }
+  if (!Object.keys(update).length) {
+    return response.status(400).json({
+      error: "At least one channel setting is required",
+    });
+  }
+  const channel = updateYouTubeChannel(request.params.channelId, update);
+  if (!channel) return response.status(404).json({ error: "Channel not found" });
+  return response.json({ channel });
+});
+
+app.delete("/v1/youtube/channels/:channelId", requireScrapeToken, (request, response) => {
+  const existing = statements.getYouTubeChannel.get(request.params.channelId);
+  if (!existing) return response.status(404).json({ error: "Channel not found" });
+  statements.deleteYouTubeChannel.run(request.params.channelId);
+  return response.status(204).end();
+});
+
+app.get("/v1/binance-square/targets", requireScrapeToken, (_request, response) => {
+  response.json({ targets: listPublicBinanceSquareTargets() });
+});
+
+app.post("/v1/binance-square/targets", requireScrapeToken, async (request, response) => {
+  try {
+    const profile = typeof request.body?.profile === "string"
+      ? request.body.profile
+      : typeof request.body?.target === "string"
+        ? request.body.target
+        : "";
+    if (profile.trim().length < 2) {
+      return response.status(400).json({
+        error: "profile must be a Binance Square username or profile URL",
+      });
+    }
+    if (
+      request.body.pollIntervalSeconds !== undefined &&
+      ![2, 15, 30].includes(Number(request.body.pollIntervalSeconds))
+    ) {
+      return response.status(400).json({
+        error: "pollIntervalSeconds must be 2, 15, or 30",
+      });
+    }
+    const result = await addBinanceSquareTargetFromInput(
+      profile,
+      request.body.pollIntervalSeconds
+    );
+    return response.status(result.created ? 201 : 200).json(result);
+  } catch (error) {
+    return sendSquareError(response, error);
+  }
+});
+
+app.get("/v1/binance-square/targets/:squareUid", requireScrapeToken, (request, response) => {
+  const target = listPublicBinanceSquareTargets().find(
+    (item) => item.squareUid === request.params.squareUid
+  );
+  if (!target) {
+    return response.status(404).json({ error: "Binance Square profile not found" });
+  }
+  return response.json({ target });
+});
+
+app.patch("/v1/binance-square/targets/:squareUid", requireScrapeToken, (request, response) => {
+  const update = {};
+  if (request.body?.pollIntervalSeconds !== undefined) {
+    if (![2, 15, 30].includes(Number(request.body.pollIntervalSeconds))) {
+      return response.status(400).json({
+        error: "pollIntervalSeconds must be 2, 15, or 30",
+      });
+    }
+    update.pollIntervalSeconds = Number(request.body.pollIntervalSeconds);
+  }
+  if (request.body?.enabled !== undefined) {
+    if (typeof request.body.enabled !== "boolean") {
+      return response.status(400).json({ error: "enabled must be a boolean" });
+    }
+    update.enabled = request.body.enabled;
+  }
+  if (!Object.keys(update).length) {
+    return response.status(400).json({
+      error: "At least one profile setting is required",
+    });
+  }
+  const target = updateBinanceSquareTarget(request.params.squareUid, update);
+  if (!target) {
+    return response.status(404).json({ error: "Binance Square profile not found" });
+  }
+  return response.json({ target });
+});
+
+app.delete("/v1/binance-square/targets/:squareUid", requireScrapeToken, (request, response) => {
+  const existing = statements.getBinanceSquareTarget.get(request.params.squareUid);
+  if (!existing) {
+    return response.status(404).json({ error: "Binance Square profile not found" });
+  }
+  statements.deleteBinanceSquareTarget.run(request.params.squareUid);
+  return response.status(204).end();
+});
+
+app.get("/v1/watchlist", requireScrapeToken, (_request, response) => {
+  response.json(getWatchlist());
+});
+
+app.post("/v1/observations", requireScrapeToken, async (request, response) => {
+  const items = request.body?.items;
+  if (!Array.isArray(items)) {
+    return response.status(400).json({ error: "items must be an array" });
+  }
+  if (items.length > 200) {
+    return response.status(400).json({ error: "items is limited to 200 per request" });
+  }
+  const result = await applyObservations(request.body);
+  return response.json(result);
+});
 
 app.get("/pump/assets/:key", (request, response) => {
   const file = getPumpAssetFile(request.params.key);
@@ -194,6 +406,22 @@ app.get("/", (request, response) => {
     recentPumpUpdates: statements.recentPumpUpdates.all(10),
     pumpUpdateCount: statements.countPumpUpdates.get().count,
     pumpEnabled: isPumpEnabled(),
+    robinhoodState: statements.getRobinhoodState.get(),
+    recentRobinhoodPages: statements.recentRobinhoodPages.all(30),
+    robinhoodPageCount: statements.countRobinhoodPages.get().count,
+    robinhoodDiscoveryCount: statements.countRobinhoodDiscoveries.get().count,
+    robinhoodEnabled: isRobinhoodEnabled(),
+    youtubeChannels: statements.listYouTubeChannels.all(),
+    recentYouTubeVideos: statements.recentYouTubeVideos.all(20),
+    youtubeVideoCount: statements.countYouTubeVideos.get().count,
+    youtubeDiscoveryCount: statements.countYouTubeDiscoveries.get().count,
+    youtubeEnabled: isYouTubeEnabled(),
+    binanceSquareTargets: statements.listBinanceSquareTargets.all(),
+    recentBinanceSquarePosts: statements.recentBinanceSquarePosts.all(20),
+    binanceSquarePostCount: statements.countBinanceSquarePosts.get().count,
+    binanceSquareDiscoveryCount: statements.countBinanceSquareDiscoveries.get().count,
+    binanceSquareEnabled: isBinanceSquareEnabled(),
+    satellites: statements.listSatellites.all(),
     recentReports: statements.recentAlertReports.all(10),
     reportCount: statements.countAlertReports.get().count,
     webhookConfigured: Boolean(webhook),
@@ -202,6 +430,8 @@ app.get("/", (request, response) => {
     githubPollSeconds: GITHUB_POLL_INTERVAL_MS / 1000,
     binancePollSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
     pumpPollSeconds: PUMP_POLL_INTERVAL_MS / 1000,
+    robinhoodPollSeconds: ROBINHOOD_POLL_INTERVAL_MS / 1000,
+    youtubePollSeconds: 15,
     message: request.query.message || "",
     error: request.query.error || "",
   });
@@ -360,6 +590,94 @@ app.post("/pump/scan", (request, response) => {
   response.redirect("/?message=Pump app check started.");
 });
 
+app.post("/robinhood/toggle", (request, response) => {
+  const enabled = !isRobinhoodEnabled();
+  statements.setSetting.run("robinhood_pages_enabled", enabled ? "1" : "0");
+  if (enabled) scanRobinhood();
+  response.redirect(
+    `/?message=Robinhood page monitor ${enabled ? "resumed" : "paused"}.`
+  );
+});
+
+app.post("/robinhood/scan", (request, response) => {
+  scanRobinhood(true);
+  response.redirect("/?message=Robinhood page check started.");
+});
+
+app.post("/youtube/toggle", (request, response) => {
+  const enabled = !isYouTubeEnabled();
+  statements.setSetting.run("youtube_enabled", enabled ? "1" : "0");
+  response.redirect(`/?message=YouTube monitor ${enabled ? "resumed" : "paused"}.`);
+});
+
+app.post("/youtube/channels", async (request, response) => {
+  try {
+    const result = await addYouTubeChannelFromInput(request.body.channel);
+    response.redirect(
+      `/?message=${encodeURIComponent(
+        `${result.channel.title}${
+          result.created ? " added. Building its baseline now." : " is already tracked."
+        }`
+      )}`
+    );
+  } catch (error) {
+    response.redirect(`/?error=${encodeURIComponent(error.message)}`);
+  }
+});
+
+app.post("/youtube/channels/:channelId/scan", (request, response) => {
+  scanYouTubeChannel(request.params.channelId, true).catch(() => undefined);
+  response.redirect("/?message=YouTube check started.");
+});
+
+app.post("/youtube/channels/:channelId/toggle", (request, response) => {
+  statements.toggleYouTubeChannel.run(request.params.channelId);
+  response.redirect("/?message=YouTube channel status updated.");
+});
+
+app.post("/youtube/channels/:channelId/delete", (request, response) => {
+  statements.deleteYouTubeChannel.run(request.params.channelId);
+  response.redirect("/?message=YouTube channel removed.");
+});
+
+app.post("/binance-square/toggle", (request, response) => {
+  const enabled = !isBinanceSquareEnabled();
+  statements.setSetting.run("binance_square_enabled", enabled ? "1" : "0");
+  response.redirect(
+    `/?message=Binance Square monitor ${enabled ? "resumed" : "paused"}.`
+  );
+});
+
+app.post("/binance-square/targets", async (request, response) => {
+  try {
+    const result = await addBinanceSquareTargetFromInput(request.body.profile);
+    response.redirect(
+      `/?message=${encodeURIComponent(
+        `@${result.target.username}${
+          result.created ? " added. Building its baseline now." : " is already tracked."
+        }`
+      )}`
+    );
+  } catch (error) {
+    response.redirect(`/?error=${encodeURIComponent(error.message)}`);
+  }
+});
+
+app.post("/binance-square/targets/:squareUid/scan", (request, response) => {
+  scanBinanceSquareTarget(request.params.squareUid, true).catch(() => undefined);
+  response.redirect("/?message=Binance Square check started.");
+});
+
+app.post("/binance-square/targets/:squareUid/toggle", (request, response) => {
+  statements.toggleBinanceSquareTarget.run(request.params.squareUid);
+  response.redirect("/?message=Binance Square profile status updated.");
+});
+
+app.post("/binance-square/targets/:squareUid/delete", (request, response) => {
+  statements.deleteBinanceSquareTarget.run(request.params.squareUid);
+  response.redirect("/?message=Binance Square profile removed.");
+});
+
 app.use((request, response) => response.status(404).send("Not found"));
 
 const httpServer = http.createServer(app);
@@ -374,6 +692,9 @@ httpServer.listen(port, "0.0.0.0", () => {
   startGithubScanner();
   startBinanceScanner();
   startPumpScanner();
+  startRobinhoodScanner();
+  startYouTubeScanner();
+  startBinanceSquareScanner();
 });
 
 let shuttingDown = false;

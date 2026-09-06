@@ -91,6 +91,35 @@ changed snapshots and Expo manifests to the primary service, which rejects
 stale versions, deduplicates updates, stores the resulting data, and remains the
 only service that emits Socket.IO and Discord alerts.
 
+## YouTube and Binance Square
+
+PagePulse owns the YouTube channel and Binance Square target lists and archives
+every observed video/post ID in `/data/tracker.db`. The first page is a silent
+baseline. Later `INSERT OR IGNORE` results emit once, while a page containing
+five or more previously unseen IDs is archived without emit as a dump fuse.
+The management APIs are `/v1/youtube/channels` and
+`/v1/binance-square/targets`.
+
+## Robinhood page monitoring
+
+The Robinhood monitor watches its public Next.js manifests, webapp runtime,
+robots file, sitemap sections, and same-domain links. It stores a silent first
+snapshot and emits only newly inserted routes on later scans.
+
+## Satellites
+
+The Railway service with the persistent volume remains the hub and keeps all
+of its scanners running. Extra services can run the same repository with only:
+
+```env
+PAGEPULSE_ROLE=satellite
+```
+
+Satellites fetch the hub watchlist, run fetchers without a local seen database,
+and POST observations back to `https://webtracker.up.railway.app`. The hub is
+the only SQLite writer and the only event emitter. The satellite identity is
+derived from Railway's service name or the machine hostname.
+
 ## Pump app monitoring
 
 The Pump monitor checks the Android `mainnet` Expo update channel every five
@@ -120,8 +149,9 @@ subdomain, GitHub, Binance, or Pump discovery is broadcast as `tracker_event`:
 }
 ```
 
-The supported event types are `website_page`, `website_subdomain`, `github_commit`,
-`github_repository`, `binance_ui`, and `pump_app_update`. A data server can
+The supported event types are `website_page`, `website_subdomain`,
+`github_commit`, `github_repository`, `binance_ui`, `pump_app_update`,
+`robinhood_page`, `youtube_video`, and `binance_square_post`. A data server can
 subscribe with:
 
 ```js

@@ -64,6 +64,21 @@ function saveGithubReport(target, items) {
   );
 }
 
+function saveRobinhoodReport(pages) {
+  return saveReport(
+    "robinhood",
+    "robinhood.com · new pages",
+    `${pages.length} pages discovered on robinhood.com`,
+    pages.map((page) => ({
+      label: page.title || page.path,
+      value: page.url,
+      url: page.url,
+      meta: page.source || "discovery",
+    })),
+    "https://robinhood.com/"
+  );
+}
+
 function saveBinanceReport(event) {
   return saveReport(
     "binance",
@@ -83,6 +98,7 @@ module.exports = {
   reportUrl,
   saveBinanceReport,
   saveGithubReport,
+  saveRobinhoodReport,
   saveSubdomainsReport,
   saveWebsitePagesReport,
 };

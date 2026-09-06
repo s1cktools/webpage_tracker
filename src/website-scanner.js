@@ -1,5 +1,4 @@
 const {
-  addDiscoveredUrls,
   addLog,
   getSetting,
   pruneDiscoveredUrls,
@@ -8,6 +7,7 @@ const {
 const { canonicalSiteHostname, siteHostnameAliases } = require("./ct");
 const { excludeTranslatedUrls, isTranslatedUrl } = require("./discovery");
 const { fallbackTitle } = require("./discord");
+const { ingestWebsitePages } = require("./observations");
 const { notifyWebsitePages } = require("./scanner");
 const { WEBSITE_PLAYBOOKS, collectPlaybook, getPlaybook } = require("./websites");
 
@@ -114,11 +114,15 @@ async function scanWebsite(playbook, { force = false } = {}) {
       if (site.ignore_locales) urls = excludeTranslatedUrls(urls);
       pageCount += urls.length;
       const firstSeen = !seen.has(group.key);
-      const inserted = addDiscoveredUrls(
-        site.id,
+      const ingested = await ingestWebsitePages(
+        site,
         urls,
-        firstSeen || !site.baselined
+        {
+          isBaseline: firstSeen || !site.baselined,
+          notify: false,
+        }
       );
+      const inserted = ingested.items;
       seen.add(group.key);
       const pageByUrl = new Map(group.pages.map((page) => [page.url, page]));
       if (!firstSeen && site.baselined) {

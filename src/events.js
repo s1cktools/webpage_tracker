@@ -162,6 +162,98 @@ function buildBinanceUiEvent(
   );
 }
 
+function buildRobinhoodPageEvent(
+  page,
+  detectedAt = new Date(),
+  reportUrl = null,
+  itemCount = 1
+) {
+  return createEvent(
+    "robinhood_page",
+    displayData(
+      {
+        website_name: "Robinhood",
+        hostname: page.host || "robinhood.com",
+        path: page.path,
+        url: page.url,
+        discovery_source: page.source || "discovery",
+      },
+      page.title,
+      `${itemCount} new page${itemCount === 1 ? "" : "s"} discovered on robinhood.com`,
+      reportUrl,
+      itemCount
+    ),
+    detectedAt
+  );
+}
+
+function buildBinanceSquarePostEvent(target, post, detectedAt = new Date()) {
+  const url = post.url || `https://www.binance.com/en/square/post/${encodeURIComponent(post.id)}`;
+  const title = post.title || String(post.content || "").slice(0, 80) || "Binance Square post";
+  return createEvent(
+    "binance_square_post",
+    displayData(
+      {
+        post: {
+          id: post.id,
+          created_at: post.createdAt ?? post.created_at ?? 0,
+          post_type: post.postType ?? post.post_type ?? "other",
+          content_type: post.contentType ?? post.content_type ?? 0,
+          is_pinned: Boolean(post.isPinned ?? post.is_pinned),
+          title: post.title ?? null,
+          content: post.content || "",
+          image: (post.images && post.images[0]) || post.cover || post.image || null,
+          cover: post.cover ?? null,
+          url,
+          images: post.images || [],
+          author: {
+            square_uid: post.author?.squareUid ?? post.author?.square_uid ?? target.square_uid,
+            username: post.author?.username ?? target.username,
+            display_name: post.author?.displayName ?? post.author?.display_name ?? target.display_name,
+            avatar: post.author?.avatar ?? target.avatar ?? null,
+          },
+        },
+      },
+      title,
+      `${target.display_name || target.username} posted on Binance Square`,
+      url,
+      1
+    ),
+    detectedAt
+  );
+}
+
+function buildYouTubeVideoEvent(channel, video, detectedAt = new Date()) {
+  const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
+  return createEvent(
+    "youtube_video",
+    displayData(
+      {
+        channel: {
+          id: channel.channel_id,
+          handle: channel.handle,
+          title: channel.title,
+          aiAnalysisEnabled: channel.ai_analysis_enabled === 1,
+        },
+        video: {
+          id: video.videoId,
+          title: video.title,
+          url: videoUrl,
+          thumbnailUrl:
+            video.thumbnailUrl || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`,
+          publishedAt: new Date(detectedAt).toISOString(),
+          videoType: "unknown",
+        },
+      },
+      video.title,
+      `${channel.title} uploaded ${video.title}`,
+      videoUrl,
+      1
+    ),
+    detectedAt
+  );
+}
+
 function buildPumpAppUpdateEvent(update, detectedAt) {
   const shownChanges = update.changes.slice(0, 200);
   const reportUrl = `${getPublicBaseUrl()}/pump/updates/${encodeURIComponent(update.updateId)}`;
@@ -199,11 +291,14 @@ function buildPumpAppUpdateEvent(update, detectedAt) {
 }
 
 module.exports = {
+  buildBinanceSquarePostEvent,
   buildBinanceUiEvent,
   buildGithubEvent,
   buildPumpAppUpdateEvent,
+  buildRobinhoodPageEvent,
   buildWebsitePageEvent,
   buildWebsiteSubdomainEvent,
+  buildYouTubeVideoEvent,
   createEvent,
   getPublicBaseUrl,
 };

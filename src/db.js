@@ -188,6 +188,94 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS robinhood_state (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    home_etag TEXT,
+    login_etag TEXT,
+    learn_etag TEXT,
+    robots_etag TEXT,
+    sitemap_etag TEXT,
+    brand_build_id TEXT,
+    learn_build_id TEXT,
+    runtime_url TEXT,
+    sources_json TEXT NOT NULL DEFAULT '{}',
+    page_count INTEGER NOT NULL DEFAULT 0,
+    baselined INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT,
+    last_error TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS robinhood_pages (
+    url TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    host TEXT NOT NULL,
+    source TEXT NOT NULL,
+    title TEXT,
+    is_baseline INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS youtube_channels (
+    channel_id TEXT PRIMARY KEY,
+    handle TEXT,
+    title TEXT NOT NULL,
+    poll_interval_seconds INTEGER NOT NULL DEFAULT 15,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    baselined INTEGER NOT NULL DEFAULT 0,
+    ai_analysis_enabled INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS youtube_videos (
+    channel_id TEXT NOT NULL REFERENCES youtube_channels(channel_id) ON DELETE CASCADE,
+    video_id TEXT NOT NULL,
+    title TEXT,
+    thumbnail_url TEXT,
+    is_baseline INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (channel_id, video_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS binance_square_targets (
+    square_uid TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    avatar TEXT,
+    biography TEXT,
+    poll_interval_seconds INTEGER NOT NULL DEFAULT 15,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    baselined INTEGER NOT NULL DEFAULT 0,
+    pinned_post_count INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS binance_square_posts (
+    square_uid TEXT NOT NULL REFERENCES binance_square_targets(square_uid) ON DELETE CASCADE,
+    post_id TEXT NOT NULL,
+    title TEXT,
+    content TEXT,
+    created_at INTEGER,
+    post_type TEXT,
+    content_type INTEGER,
+    is_pinned INTEGER NOT NULL DEFAULT 0,
+    url TEXT,
+    cover TEXT,
+    images_json TEXT,
+    is_baseline INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (square_uid, post_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS satellites (
+    id TEXT PRIMARY KEY,
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_kinds_json TEXT NOT NULL DEFAULT '[]'
+  );
+
   CREATE TABLE IF NOT EXISTS alert_reports (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -217,6 +305,15 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS pump_app_updates_detected
     ON pump_app_updates(detected_at DESC);
+
+  CREATE INDEX IF NOT EXISTS robinhood_pages_seen
+    ON robinhood_pages(first_seen_at DESC);
+
+  CREATE INDEX IF NOT EXISTS youtube_videos_seen
+    ON youtube_videos(first_seen_at DESC);
+
+  CREATE INDEX IF NOT EXISTS binance_square_posts_seen
+    ON binance_square_posts(first_seen_at DESC);
 
   CREATE INDEX IF NOT EXISTS alert_reports_created
     ON alert_reports(created_at DESC);
@@ -643,6 +740,54 @@ const statements = {
   getPumpAsset: db.prepare(`
     SELECT * FROM pump_assets WHERE asset_key = ?
   `),
+  ensureRobinhoodState: db.prepare(`
+    INSERT OR IGNORE INTO robinhood_state (id) VALUES (1)
+  `),
+  getRobinhoodState: db.prepare("SELECT * FROM robinhood_state WHERE id = 1"),
+  markRobinhoodUnchanged: db.prepare(`
+    UPDATE robinhood_state
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = NULL
+    WHERE id = 1
+  `),
+  saveRobinhoodState: db.prepare(`
+    UPDATE robinhood_state
+    SET home_etag = ?,
+        login_etag = ?,
+        learn_etag = ?,
+        robots_etag = ?,
+        sitemap_etag = ?,
+        brand_build_id = ?,
+        learn_build_id = ?,
+        runtime_url = ?,
+        sources_json = ?,
+        page_count = ?,
+        baselined = 1,
+        last_checked_at = CURRENT_TIMESTAMP,
+        last_error = NULL
+    WHERE id = 1
+  `),
+  markRobinhoodError: db.prepare(`
+    UPDATE robinhood_state
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    WHERE id = 1
+  `),
+  insertRobinhoodPage: db.prepare(`
+    INSERT OR IGNORE INTO robinhood_pages
+      (url, path, host, source, title, is_baseline)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  recentRobinhoodPages: db.prepare(`
+    SELECT * FROM robinhood_pages
+    WHERE is_baseline = 0
+    ORDER BY first_seen_at DESC, url
+    LIMIT ?
+  `),
+  countRobinhoodPages: db.prepare(`
+    SELECT COUNT(*) AS count FROM robinhood_pages
+  `),
+  countRobinhoodDiscoveries: db.prepare(`
+    SELECT COUNT(*) AS count FROM robinhood_pages WHERE is_baseline = 0
+  `),
   insertAlertReport: db.prepare(`
     INSERT INTO alert_reports (id, kind, title, item_count, payload_json)
     VALUES (?, ?, ?, ?, ?)
@@ -665,9 +810,165 @@ const statements = {
       SELECT id FROM alert_reports ORDER BY created_at DESC, rowid DESC LIMIT 500
     )
   `),
+  upsertSatellite: db.prepare(`
+    INSERT INTO satellites (id, last_seen_at, last_kinds_json)
+    VALUES (?, CURRENT_TIMESTAMP, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      last_seen_at = CURRENT_TIMESTAMP,
+      last_kinds_json = CASE
+        WHEN excluded.last_kinds_json = '[]' THEN satellites.last_kinds_json
+        ELSE excluded.last_kinds_json
+      END
+  `),
+  listSatellites: db.prepare(`
+    SELECT * FROM satellites ORDER BY last_seen_at DESC
+  `),
+  listYouTubeChannels: db.prepare(`
+    SELECT youtube_channels.*,
+      (SELECT COUNT(*) FROM youtube_videos WHERE channel_id = youtube_channels.channel_id) AS video_count
+    FROM youtube_channels
+    ORDER BY created_at DESC
+  `),
+  getYouTubeChannel: db.prepare("SELECT * FROM youtube_channels WHERE channel_id = ?"),
+  countYouTubeChannels: db.prepare("SELECT COUNT(*) AS count FROM youtube_channels"),
+  activeYouTubeChannels: db.prepare(`
+    SELECT * FROM youtube_channels WHERE enabled = 1 ORDER BY created_at
+  `),
+  addYouTubeChannel: db.prepare(`
+    INSERT INTO youtube_channels (channel_id, handle, title, poll_interval_seconds)
+    VALUES (?, ?, ?, ?)
+  `),
+  updateYouTubeChannel: db.prepare(`
+    UPDATE youtube_channels
+    SET poll_interval_seconds = COALESCE(?, poll_interval_seconds),
+        ai_analysis_enabled = COALESCE(?, ai_analysis_enabled)
+    WHERE channel_id = ?
+  `),
+  toggleYouTubeChannel: db.prepare(`
+    UPDATE youtube_channels
+    SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END
+    WHERE channel_id = ?
+  `),
+  deleteYouTubeChannel: db.prepare("DELETE FROM youtube_channels WHERE channel_id = ?"),
+  markYouTubeBaselined: db.prepare(`
+    UPDATE youtube_channels
+    SET baselined = 1, last_checked_at = CURRENT_TIMESTAMP, last_error = NULL
+    WHERE channel_id = ?
+  `),
+  markYouTubeSuccess: db.prepare(`
+    UPDATE youtube_channels
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = NULL
+    WHERE channel_id = ?
+  `),
+  markYouTubeError: db.prepare(`
+    UPDATE youtube_channels
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    WHERE channel_id = ?
+  `),
+  insertYouTubeVideo: db.prepare(`
+    INSERT OR IGNORE INTO youtube_videos
+      (channel_id, video_id, title, thumbnail_url, is_baseline)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  recentYouTubeVideos: db.prepare(`
+    SELECT youtube_videos.*, youtube_channels.title AS channel_title,
+      youtube_channels.handle AS channel_handle
+    FROM youtube_videos
+    JOIN youtube_channels ON youtube_channels.channel_id = youtube_videos.channel_id
+    WHERE youtube_videos.is_baseline = 0
+    ORDER BY youtube_videos.first_seen_at DESC
+    LIMIT ?
+  `),
+  countYouTubeVideos: db.prepare("SELECT COUNT(*) AS count FROM youtube_videos"),
+  countYouTubeDiscoveries: db.prepare(`
+    SELECT COUNT(*) AS count FROM youtube_videos WHERE is_baseline = 0
+  `),
+  syncYouTubeChannel: db.prepare(`
+    UPDATE youtube_channels
+    SET handle = COALESCE(?, handle),
+        title = COALESCE(?, title),
+        poll_interval_seconds = COALESCE(?, poll_interval_seconds)
+    WHERE channel_id = ?
+  `),
+  listBinanceSquareTargets: db.prepare(`
+    SELECT binance_square_targets.*,
+      (SELECT COUNT(*) FROM binance_square_posts WHERE square_uid = binance_square_targets.square_uid) AS post_count
+    FROM binance_square_targets
+    ORDER BY created_at DESC
+  `),
+  getBinanceSquareTarget: db.prepare("SELECT * FROM binance_square_targets WHERE square_uid = ?"),
+  getBinanceSquareTargetByUsername: db.prepare(`
+    SELECT * FROM binance_square_targets WHERE lower(username) = lower(?)
+  `),
+  countBinanceSquareTargets: db.prepare("SELECT COUNT(*) AS count FROM binance_square_targets"),
+  activeBinanceSquareTargets: db.prepare(`
+    SELECT * FROM binance_square_targets WHERE enabled = 1 ORDER BY created_at
+  `),
+  addBinanceSquareTarget: db.prepare(`
+    INSERT INTO binance_square_targets
+      (square_uid, username, display_name, avatar, biography, poll_interval_seconds)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  syncBinanceSquareTarget: db.prepare(`
+    UPDATE binance_square_targets
+    SET username = COALESCE(?, username),
+        display_name = COALESCE(?, display_name),
+        poll_interval_seconds = COALESCE(?, poll_interval_seconds)
+    WHERE square_uid = ?
+  `),
+  updateBinanceSquareTarget: db.prepare(`
+    UPDATE binance_square_targets
+    SET poll_interval_seconds = COALESCE(?, poll_interval_seconds),
+        enabled = COALESCE(?, enabled)
+    WHERE square_uid = ?
+  `),
+  toggleBinanceSquareTarget: db.prepare(`
+    UPDATE binance_square_targets
+    SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END
+    WHERE square_uid = ?
+  `),
+  deleteBinanceSquareTarget: db.prepare("DELETE FROM binance_square_targets WHERE square_uid = ?"),
+  markBinanceSquareBaselined: db.prepare(`
+    UPDATE binance_square_targets
+    SET baselined = 1, last_checked_at = CURRENT_TIMESTAMP, last_error = NULL,
+        pinned_post_count = ?
+    WHERE square_uid = ?
+  `),
+  markBinanceSquareSuccess: db.prepare(`
+    UPDATE binance_square_targets
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = NULL,
+        pinned_post_count = ?
+    WHERE square_uid = ?
+  `),
+  markBinanceSquareError: db.prepare(`
+    UPDATE binance_square_targets
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    WHERE square_uid = ?
+  `),
+  insertBinanceSquarePost: db.prepare(`
+    INSERT OR IGNORE INTO binance_square_posts
+      (square_uid, post_id, title, content, created_at, post_type, content_type,
+       is_pinned, url, cover, images_json, is_baseline)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  recentBinanceSquarePosts: db.prepare(`
+    SELECT binance_square_posts.*, binance_square_targets.username,
+      binance_square_targets.display_name
+    FROM binance_square_posts
+    JOIN binance_square_targets
+      ON binance_square_targets.square_uid = binance_square_posts.square_uid
+    WHERE binance_square_posts.is_baseline = 0
+    ORDER BY binance_square_posts.first_seen_at DESC
+    LIMIT ?
+  `),
+  countBinanceSquarePosts: db.prepare("SELECT COUNT(*) AS count FROM binance_square_posts"),
+  countBinanceSquareDiscoveries: db.prepare(`
+    SELECT COUNT(*) AS count FROM binance_square_posts WHERE is_baseline = 0
+  `),
 };
 
 statements.ensurePumpState.run();
+statements.ensureRobinhoodState.run();
 db.exec(`
   UPDATE binance_ui_observations
   SET notification_status = 'pending'
@@ -972,6 +1273,173 @@ function listPendingBinanceNotifications() {
   return statements.pendingBinanceNotifications.all();
 }
 
+function addRobinhoodPages(pages, isBaseline = false) {
+  const inserted = [];
+  db.exec("BEGIN");
+  try {
+    for (const page of pages) {
+      const result = statements.insertRobinhoodPage.run(
+        page.url,
+        page.path,
+        page.host || "robinhood.com",
+        page.source,
+        page.title || "",
+        isBaseline ? 1 : 0
+      );
+      if (result.changes) inserted.push(page);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return inserted;
+}
+
+function syncYouTubeChannels(channels) {
+  let added = 0;
+  let updated = 0;
+  db.exec("BEGIN");
+  try {
+    for (const channel of channels) {
+      const interval = channel.pollIntervalSeconds ?? 15;
+      const existing = statements.getYouTubeChannel.get(channel.channelId);
+      if (!existing) {
+        statements.addYouTubeChannel.run(
+          channel.channelId,
+          channel.handle ?? null,
+          channel.title,
+          interval
+        );
+        added += 1;
+        continue;
+      }
+      const handle = channel.handle ?? null;
+      if (
+        existing.title !== channel.title ||
+        (existing.handle || null) !== handle ||
+        existing.poll_interval_seconds !== interval
+      ) {
+        statements.syncYouTubeChannel.run(handle, channel.title, interval, channel.channelId);
+        updated += 1;
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { added, updated };
+}
+
+function recordYouTubeVideos(channelId, videos, isBaseline = false) {
+  const inserted = [];
+  db.exec("BEGIN");
+  try {
+    for (const video of videos) {
+      if (
+        statements.insertYouTubeVideo.run(
+          channelId,
+          video.videoId,
+          video.title || null,
+          video.thumbnailUrl || null,
+          isBaseline ? 1 : 0
+        ).changes
+      ) {
+        inserted.push(video);
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return inserted;
+}
+
+function syncBinanceSquareTargets(targets) {
+  let added = 0;
+  let updated = 0;
+  db.exec("BEGIN");
+  try {
+    for (const target of targets) {
+      const interval = target.pollIntervalSeconds ?? 2;
+      const existing = statements.getBinanceSquareTarget.get(target.squareUid);
+      if (!existing) {
+        statements.addBinanceSquareTarget.run(
+          target.squareUid,
+          target.username,
+          target.displayName,
+          target.avatar ?? null,
+          target.biography ?? null,
+          interval
+        );
+        added += 1;
+        continue;
+      }
+      if (
+        existing.username !== target.username ||
+        existing.display_name !== target.displayName ||
+        existing.poll_interval_seconds !== interval
+      ) {
+        statements.syncBinanceSquareTarget.run(
+          target.username,
+          target.displayName,
+          interval,
+          target.squareUid
+        );
+        updated += 1;
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { added, updated };
+}
+
+function recordBinanceSquarePosts(squareUid, posts, isBaseline = false) {
+  const inserted = [];
+  db.exec("BEGIN");
+  try {
+    for (const post of posts) {
+      if (
+        statements.insertBinanceSquarePost.run(
+          squareUid,
+          post.id,
+          post.title || null,
+          post.content || null,
+          post.createdAt ?? null,
+          post.postType || null,
+          post.contentType ?? null,
+          post.isPinned ? 1 : 0,
+          post.url || null,
+          post.cover || null,
+          JSON.stringify(post.images || []),
+          isBaseline ? 1 : 0
+        ).changes
+      ) {
+        inserted.push(post);
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return inserted;
+}
+
+function touchSatellite(satelliteId, kinds = []) {
+  const id = String(satelliteId || "").trim();
+  if (!id) return;
+  statements.upsertSatellite.run(
+    id,
+    JSON.stringify([...new Set(kinds.filter(Boolean))])
+  );
+}
+
 function savePumpUpdate(state, update) {
   db.exec("BEGIN");
   try {
@@ -1149,7 +1617,6 @@ function createAlertReport(kind, title, payload) {
 module.exports = {
   dataDirectory,
   db,
-  dataDirectory,
   statements,
   getSetting,
   addDiscoveredUrls,
@@ -1159,6 +1626,7 @@ module.exports = {
   addGithubItems,
   addGithubLog,
   addBinanceChanges,
+  addRobinhoodPages,
   applyBinanceObservation,
   applyPumpObservation,
   claimBinanceNotification,
@@ -1171,5 +1639,10 @@ module.exports = {
   markBinanceNotificationFailed,
   markPumpNotificationDelivered,
   markPumpNotificationFailed,
+  recordBinanceSquarePosts,
+  recordYouTubeVideos,
   savePumpUpdate,
+  syncBinanceSquareTargets,
+  syncYouTubeChannels,
+  touchSatellite,
 };

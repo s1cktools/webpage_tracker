@@ -1,7 +1,5 @@
 const {
-  addDiscoveredSubdomains,
   addLog,
-  getSetting,
   statements,
 } = require("./db");
 const {
@@ -18,10 +16,7 @@ const {
   startCertspotterManager,
   stopCertspotterManager,
 } = require("./certspotter-manager");
-const { buildSubdomainPayload } = require("./discord");
-const { buildWebsiteSubdomainEvent } = require("./events");
-const { emitTrackerEvent } = require("./event-stream");
-const { saveSubdomainsReport } = require("./reports");
+const { ingestWebsiteSubdomains } = require("./observations");
 
 const CT_SWEEP_INTERVAL_MS = 6 * 60 * 60_000;
 const CRT_NAME_RECHECK_MS = 24 * 60 * 60_000;
@@ -138,20 +133,6 @@ function safeAddLog(siteId, level, message) {
   }
 }
 
-async function sendDiscordAlert(site, entries, startedAt, reportUrl) {
-  const webhookUrl = getSetting("discord_webhook_url");
-  if (!webhookUrl || !entries.length) return;
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      buildSubdomainPayload(site, entries, Date.now() - startedAt, new Date(), reportUrl)
-    ),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`Discord webhook returned ${response.status}`);
-}
-
 async function processCtEntries(siteOrId, entries, source, options = {}) {
   const site =
     typeof siteOrId === "object" ? statements.getSite.get(siteOrId.id) : statements.getSite.get(siteOrId);
@@ -169,48 +150,14 @@ async function processCtEntries(siteOrId, entries, source, options = {}) {
   if (!relevant.length) return [];
 
   const startedAt = Date.now();
-  const inserted = addDiscoveredSubdomains(
-    site.id,
+  const ingested = await ingestWebsiteSubdomains(
+    site,
     relevant,
     source,
-    options.forceBaseline || !site.ct_baselined
+    { forceBaseline: options.forceBaseline, startedAt }
   );
+  const inserted = ingested.items;
   if (!inserted.length) return [];
-
-  if (site.ct_baselined && !options.forceBaseline) {
-    const detectedAt = new Date();
-    let reportUrl = null;
-    try {
-      reportUrl = saveSubdomainsReport(site, inserted).url;
-    } catch (error) {
-      safeAddLog(site.id, "error", `CT report failed: ${error.message}`);
-    }
-    try {
-      for (const entry of inserted) {
-        emitTrackerEvent(
-          buildWebsiteSubdomainEvent(
-            site,
-            entry,
-            detectedAt,
-            reportUrl,
-            inserted.length
-          )
-        );
-      }
-    } catch (error) {
-      safeAddLog(site.id, "error", `CT event stream failed: ${error.message}`);
-    }
-    try {
-      await sendDiscordAlert(site, inserted, startedAt, reportUrl);
-    } catch (error) {
-      safeAddLog(site.id, "error", `CT Discord alert failed: ${error.message}`);
-    }
-    safeAddLog(
-      site.id,
-      "new",
-      `${inserted.length} new certificate subdomain${inserted.length === 1 ? "" : "s"}`
-    );
-  }
 
   if (site.ct_baselined && !options.forceBaseline) {
     queueDnsChecks(site.id, inserted);

@@ -198,5 +198,47 @@ contains at most 200 changes; use `change_count` and `changes_truncated` to
 detect a capped payload. `url` opens the saved, human-readable change list;
 `manifest_url` is the underlying Expo API endpoint.
 
+### `robinhood_page`
+
+```json
+{
+  "website_name": "Robinhood",
+  "hostname": "robinhood.com",
+  "title": "Tboy",
+  "path": "/us/en/tboy",
+  "url": "https://robinhood.com/us/en/tboy",
+  "discovery_source": "brand_manifest"
+}
+```
+
+### `youtube_video`
+
+Contains the durable PagePulse channel record and the newly inserted video ID,
+title, watch URL, thumbnail URL, and AI-analysis setting.
+
+### `binance_square_post`
+
+Contains the newly inserted Square post plus its author, content, images,
+created timestamp, pin state, and canonical post URL.
+
+## Satellite scrape nodes
+
+The hub continues scraping and owns `/data/tracker.db`. Extra deployments run
+the same repository with:
+
+```env
+PAGEPULSE_ROLE=satellite
+```
+
+The hub URL and shared token are built into the satellite runtime. It derives
+its heartbeat ID from Railway's service name or the machine hostname. It pulls
+`GET /v1/watchlist` every 30 seconds and posts batches to
+`POST /v1/observations`. Satellites never attach `/events`, write SQLite,
+baseline locally, or send Discord notifications.
+
+The hub accepts website page/subdomain, GitHub, Binance UI, Pump, Robinhood,
+YouTube, and Binance Square observations. Existing IDs and versions are
+ignored by the hub's durable ingest paths.
+
 There is no replay. Events emitted while the data server is disconnected are
 not sent later.

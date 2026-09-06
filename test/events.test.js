@@ -1,11 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  buildBinanceSquarePostEvent,
   buildBinanceUiEvent,
   buildGithubEvent,
   buildPumpAppUpdateEvent,
+  buildRobinhoodPageEvent,
   buildWebsitePageEvent,
   buildWebsiteSubdomainEvent,
+  buildYouTubeVideoEvent,
 } = require("../src/events");
 
 const detectedAt = new Date("2026-08-17T13:33:04.215Z");
@@ -146,6 +149,26 @@ test("builds a snake_case Binance UI event", () => {
   assert.equal(event.data.item_count, 3);
 });
 
+test("builds a Robinhood page event", () => {
+  const event = buildRobinhoodPageEvent(
+    {
+      title: "Tboy",
+      path: "/us/en/tboy",
+      url: "https://robinhood.com/us/en/tboy",
+      host: "robinhood.com",
+      source: "brand_manifest",
+    },
+    detectedAt,
+    "https://tracker.example/reports/robinhood",
+    3
+  );
+
+  assertEnvelope(event, "robinhood_page");
+  assert.equal(event.data.path, "/us/en/tboy");
+  assert.equal(event.data.discovery_source, "brand_manifest");
+  assert.equal(event.data.item_count, 3);
+});
+
 test("builds a bounded snake_case Pump app update event", () => {
   const event = buildPumpAppUpdateEvent(
     {
@@ -174,4 +197,54 @@ test("builds a bounded snake_case Pump app update event", () => {
     category: "route",
     value: "/bounty/create",
   });
+});
+
+test("builds a YouTube upload event", () => {
+  const event = buildYouTubeVideoEvent(
+    {
+      channel_id: "UCXZCJLdBC09xxGZ6gcdrc6A",
+      handle: "@OpenAI",
+      title: "OpenAI",
+      ai_analysis_enabled: 1,
+    },
+    {
+      videoId: "AbCdEfGhI12",
+      title: "New upload",
+      thumbnailUrl: "https://i.ytimg.com/vi/AbCdEfGhI12/hqdefault.jpg",
+    },
+    detectedAt
+  );
+
+  assertEnvelope(event, "youtube_video");
+  assert.equal(event.data.channel.id, "UCXZCJLdBC09xxGZ6gcdrc6A");
+  assert.equal(event.data.channel.aiAnalysisEnabled, true);
+  assert.equal(event.data.video.id, "AbCdEfGhI12");
+  assert.equal(event.data.video.publishedAt, detectedAt.toISOString());
+});
+
+test("builds a Binance Square post event", () => {
+  const event = buildBinanceSquarePostEvent(
+    {
+      square_uid: "uid-1",
+      username: "binance",
+      display_name: "Binance",
+      avatar: "https://example.test/avatar.png",
+    },
+    {
+      id: "1234567890",
+      createdAt: 1757136784000,
+      postType: "post",
+      contentType: 1,
+      isPinned: false,
+      content: "New Square post",
+      url: "https://www.binance.com/en/square/post/1234567890",
+      images: ["https://example.test/post.jpg"],
+    },
+    detectedAt
+  );
+
+  assertEnvelope(event, "binance_square_post");
+  assert.equal(event.data.post.id, "1234567890");
+  assert.equal(event.data.post.author.username, "binance");
+  assert.equal(event.data.post.image, "https://example.test/post.jpg");
 });

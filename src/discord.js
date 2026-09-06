@@ -8,6 +8,7 @@ const BINANCE_GREEN = 0x2ebd85;
 const BINANCE_AMBER = 0xf0b90b;
 const BINANCE_RED = 0xef4444;
 const PUMP_GREEN = 0x86efac;
+const ROBINHOOD_GREEN = 0x00c805;
 const CT_BLUE = 0x38bdf8;
 const MAX_VISIBLE_URLS = 10;
 
@@ -205,6 +206,32 @@ function buildBinancePayload(events, scanDurationMs, now = new Date()) {
   };
 }
 
+function buildRobinhoodPayload(pages, scanDurationMs, now = new Date(), reportUrl = null) {
+  const shown = pages.slice(0, MAX_VISIBLE_URLS);
+  const extra = pages.length - shown.length;
+  return {
+    username: "the watcher",
+    allowed_mentions: { parse: [] },
+    content:
+      extra > 0
+        ? `+${extra} more new Robinhood pages were discovered.${
+            reportUrl ? ` [View all ${pages.length} →](${reportUrl})` : ""
+          }`
+        : undefined,
+    embeds: shown.map((page) => ({
+      color: ROBINHOOD_GREEN,
+      author: { name: page.host || "robinhood.com" },
+      title: page.title || fallbackTitle(page.url),
+      url: page.url,
+      description: page.path && page.path !== page.url ? page.path : page.url,
+      footer: {
+        text: `NEW PAGE · ${page.source || "discovery"} · ${scanDurationMs}ms`,
+      },
+      timestamp: now.toISOString(),
+    })),
+  };
+}
+
 function buildPumpPayload(update, scanDurationMs, now = new Date()) {
   const groups = groupPumpChanges(update.changes);
   const added = groups.reduce((total, group) => total + group.added.length, 0);
@@ -243,6 +270,7 @@ module.exports = {
   buildGitHubPayload,
   buildBinancePayload,
   buildPumpPayload,
+  buildRobinhoodPayload,
   buildSubdomainPayload,
   displayUrl,
   fallbackTitle,

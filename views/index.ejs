@@ -20,6 +20,8 @@
         <i>/</i>
         <span title="<%= ctStatus.lastError || 'Cert Spotter is monitoring CT logs directly' %>">ct <%= ctStatus.connected ? "direct" : "starting" %></span>
         <i>/</i>
+        <span title="<%= satellites.map((item) => item.id + ' · ' + item.last_seen_at).join('\n') || 'No satellites have reported yet' %>">sats <%= satellites.length %></span>
+        <i>/</i>
         <a href="/logs">logs</a>
         <i>/</i>
         <a href="/preview">preview</a>
@@ -44,6 +46,15 @@
         <span><b><%= sites.reduce((sum, site) => sum + site.subdomain_count, 0) %></b> subdomains</span>
         <span><b><%= sites.filter((site) => site.enabled).length %></b> active</span>
       </section>
+
+      <% if (satellites.length) { %>
+        <section class="summary">
+          <span><b><%= satellites.length %></b> satellites</span>
+          <% satellites.slice(0, 6).forEach((item) => { %>
+            <span><%= item.id %> · <%= item.last_seen_at %></span>
+          <% }) %>
+        </section>
+      <% } %>
 
       <div class="layout">
         <section class="block watchlist">
@@ -202,6 +213,238 @@
               </form>
             </div>
           </article>
+        <% }) %>
+      </section>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">WATCH</span>
+          <h1>robinhood.com</h1>
+        </div>
+        <div class="binance-controls">
+          <form method="post" action="/robinhood/scan">
+            <button>scan</button>
+          </form>
+          <form method="post" action="/robinhood/toggle">
+            <button><%= robinhoodEnabled ? "pause" : "resume" %></button>
+          </form>
+        </div>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= robinhoodPageCount %></b> pages</span>
+        <span><b><%= robinhoodState.baselined ? "yes" : "no" %></b> baselined</span>
+        <span><b><%= robinhoodDiscoveryCount %></b> new</span>
+        <span><b><%= robinhoodState.brand_build_id ? robinhoodState.brand_build_id.slice(0, 8) : "—" %></b> build</span>
+        <span><b><%= robinhoodPollSeconds %>s</b> poll</span>
+        <span class="state <%= robinhoodEnabled ? '' : 'idle' %>"><%= robinhoodEnabled ? "running" : "paused" %></span>
+      </section>
+
+      <% if (robinhoodState.last_error) { %>
+        <section class="binance-errors">
+          <span title="<%= robinhoodState.last_error %>"><b>robinhood.com</b> · <%= robinhoodState.last_error %></span>
+        </section>
+      <% } %>
+
+      <section class="block robinhood-pages">
+        <header class="robinhood-header">
+          <span>page</span>
+          <span>source</span>
+          <span>detected</span>
+        </header>
+
+        <% if (!recentRobinhoodPages.length) { %>
+          <div class="empty">baseline only · no new pages detected</div>
+        <% } %>
+
+        <% recentRobinhoodPages.forEach((page) => { %>
+          <a class="robinhood-row" href="<%= page.url %>" target="_blank" rel="noreferrer">
+            <b title="<%= page.url %>"><%= page.title || page.path %></b>
+            <span><%= page.source %></span>
+            <time datetime="<%= page.first_seen_at %>"><%= page.first_seen_at %></time>
+          </a>
+        <% }) %>
+      </section>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">WATCH</span>
+          <h1>youtube</h1>
+        </div>
+        <div class="binance-controls">
+          <form class="add-site" method="post" action="/youtube/channels">
+            <span class="prompt">$</span>
+            <input name="channel" type="text" aria-label="YouTube channel" placeholder="@handle or channel URL" required>
+            <button type="submit">add</button>
+          </form>
+          <form method="post" action="/youtube/toggle">
+            <button><%= youtubeEnabled ? "pause" : "resume" %></button>
+          </form>
+        </div>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= youtubeChannels.length %></b> channels</span>
+        <span><b><%= youtubeChannels.filter((item) => item.baselined).length %></b> baselined</span>
+        <span><b><%= youtubeDiscoveryCount %></b> new</span>
+        <span><b><%= youtubeVideoCount %></b> archived</span>
+        <span class="state <%= youtubeEnabled ? '' : 'idle' %>"><%= youtubeEnabled ? "running" : "paused" %></span>
+      </section>
+
+      <% const youtubeErrors = youtubeChannels.filter((item) => item.last_error); %>
+      <% if (youtubeErrors.length) { %>
+        <section class="binance-errors">
+          <% youtubeErrors.slice(0, 6).forEach((item) => { %>
+            <span title="<%= item.last_error %>"><b><%= item.title %></b> · <%= item.last_error %></span>
+          <% }) %>
+        </section>
+      <% } %>
+
+      <section class="block github-watchlist">
+        <header class="github-header">
+          <span>channel</span>
+          <span>poll</span>
+          <span>state</span>
+          <span>videos</span>
+          <span>last check</span>
+          <span></span>
+        </header>
+        <% if (!youtubeChannels.length) { %>
+          <div class="empty">no youtube channels</div>
+        <% } %>
+        <% youtubeChannels.forEach((channel) => { %>
+          <article class="github-row">
+            <div class="target">
+              <span class="signal <%= channel.enabled ? '' : 'idle' %>"></span>
+              <a href="https://www.youtube.com/channel/<%= channel.channel_id %>" target="_blank" rel="noreferrer">
+                <b><%= channel.title %></b>
+                <small><%= channel.handle || channel.channel_id %></small>
+              </a>
+              <% if (channel.last_error) { %><span class="row-error" title="<%= channel.last_error %>">!</span><% } %>
+            </div>
+            <span><%= channel.poll_interval_seconds %>s</span>
+            <span class="state <%= channel.enabled ? '' : 'idle' %>"><%= channel.baselined ? (channel.enabled ? "running" : "paused") : "baseline" %></span>
+            <span><%= channel.video_count %></span>
+            <time datetime="<%= channel.last_checked_at || '' %>"><%= channel.last_checked_at || "pending" %></time>
+            <div class="actions">
+              <form method="post" action="/youtube/channels/<%= encodeURIComponent(channel.channel_id) %>/scan">
+                <button title="Check now">scan</button>
+              </form>
+              <form method="post" action="/youtube/channels/<%= encodeURIComponent(channel.channel_id) %>/toggle">
+                <button><%= channel.enabled ? "pause" : "resume" %></button>
+              </form>
+              <form method="post" action="/youtube/channels/<%= encodeURIComponent(channel.channel_id) %>/delete" onsubmit="return confirm('Remove <%= channel.title %>?')">
+                <button class="remove">rm</button>
+              </form>
+            </div>
+          </article>
+        <% }) %>
+      </section>
+
+      <section class="block log">
+        <header class="section-title">
+          <span>youtube.log</span>
+          <span><%= recentYouTubeVideos.length %></span>
+        </header>
+        <% if (!recentYouTubeVideos.length) { %>
+          <div class="empty">baseline only · no new uploads</div>
+        <% } %>
+        <% recentYouTubeVideos.forEach((item) => { %>
+          <a href="https://www.youtube.com/watch?v=<%= item.video_id %>" target="_blank" rel="noreferrer">
+            <time><%= item.first_seen_at.slice(5, 16).replace("T", " ") %></time>
+            <span><%= item.channel_title %> · <%= item.title %></span>
+          </a>
+        <% }) %>
+      </section>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">WATCH</span>
+          <h1>binance.square</h1>
+        </div>
+        <div class="binance-controls">
+          <form class="add-site" method="post" action="/binance-square/targets">
+            <span class="prompt">$</span>
+            <input name="profile" type="text" aria-label="Binance Square profile" placeholder="@username or profile URL" required>
+            <button type="submit">add</button>
+          </form>
+          <form method="post" action="/binance-square/toggle">
+            <button><%= binanceSquareEnabled ? "pause" : "resume" %></button>
+          </form>
+        </div>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= binanceSquareTargets.length %></b> profiles</span>
+        <span><b><%= binanceSquareTargets.filter((item) => item.baselined).length %></b> baselined</span>
+        <span><b><%= binanceSquareDiscoveryCount %></b> new</span>
+        <span><b><%= binanceSquarePostCount %></b> archived</span>
+        <span class="state <%= binanceSquareEnabled ? '' : 'idle' %>"><%= binanceSquareEnabled ? "running" : "paused" %></span>
+      </section>
+
+      <% const squareErrors = binanceSquareTargets.filter((item) => item.last_error); %>
+      <% if (squareErrors.length) { %>
+        <section class="binance-errors">
+          <% squareErrors.slice(0, 6).forEach((item) => { %>
+            <span title="<%= item.last_error %>"><b>@<%= item.username %></b> · <%= item.last_error %></span>
+          <% }) %>
+        </section>
+      <% } %>
+
+      <section class="block github-watchlist">
+        <header class="github-header">
+          <span>profile</span>
+          <span>poll</span>
+          <span>state</span>
+          <span>posts</span>
+          <span>last check</span>
+          <span></span>
+        </header>
+        <% if (!binanceSquareTargets.length) { %>
+          <div class="empty">no binance square profiles</div>
+        <% } %>
+        <% binanceSquareTargets.forEach((target) => { %>
+          <article class="github-row">
+            <div class="target">
+              <span class="signal <%= target.enabled ? '' : 'idle' %>"></span>
+              <a href="https://www.binance.com/en/square/profile/<%= encodeURIComponent(target.username) %>" target="_blank" rel="noreferrer">
+                <b><%= target.display_name %></b>
+                <small>@<%= target.username %></small>
+              </a>
+              <% if (target.last_error) { %><span class="row-error" title="<%= target.last_error %>">!</span><% } %>
+            </div>
+            <span><%= target.poll_interval_seconds %>s</span>
+            <span class="state <%= target.enabled ? '' : 'idle' %>"><%= target.baselined ? (target.enabled ? "running" : "paused") : "baseline" %></span>
+            <span><%= target.post_count %></span>
+            <time datetime="<%= target.last_checked_at || '' %>"><%= target.last_checked_at || "pending" %></time>
+            <div class="actions">
+              <form method="post" action="/binance-square/targets/<%= encodeURIComponent(target.square_uid) %>/scan">
+                <button title="Check now">scan</button>
+              </form>
+              <form method="post" action="/binance-square/targets/<%= encodeURIComponent(target.square_uid) %>/toggle">
+                <button><%= target.enabled ? "pause" : "resume" %></button>
+              </form>
+              <form method="post" action="/binance-square/targets/<%= encodeURIComponent(target.square_uid) %>/delete" onsubmit="return confirm('Remove @<%= target.username %>?')">
+                <button class="remove">rm</button>
+              </form>
+            </div>
+          </article>
+        <% }) %>
+      </section>
+
+      <section class="block log">
+        <header class="section-title">
+          <span>binance.square.log</span>
+          <span><%= recentBinanceSquarePosts.length %></span>
+        </header>
+        <% if (!recentBinanceSquarePosts.length) { %>
+          <div class="empty">baseline only · no new posts</div>
+        <% } %>
+        <% recentBinanceSquarePosts.forEach((item) => { %>
+          <a href="<%= item.url || ('https://www.binance.com/en/square/post/' + encodeURIComponent(item.post_id)) %>" target="_blank" rel="noreferrer">
+            <time><%= item.first_seen_at.slice(5, 16).replace("T", " ") %></time>
+            <span>@<%= item.username %> · <%= item.title || item.content || item.post_id %></span>
+          </a>
         <% }) %>
       </section>
 
