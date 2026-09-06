@@ -12,6 +12,7 @@ const { notifyWebsitePages } = require("./scanner");
 const { WEBSITE_PLAYBOOKS, collectPlaybook, getPlaybook } = require("./websites");
 
 const WEBSITE_POLL_INTERVAL_MS = 5_000;
+const WEBSITE_DUMP_THRESHOLD = 20;
 const LOG_INTERVAL_MS = 5 * 60_000;
 
 const scanning = new Set();
@@ -147,6 +148,15 @@ async function scanWebsite(playbook, { force = false } = {}) {
         site.id,
         "info",
         `${playbook.key} baseline · ${pageCount} URLs · ${seen.size} feeds`
+      );
+    } else if (toNotify.length >= WEBSITE_DUMP_THRESHOLD) {
+      addLog(
+        site.id,
+        "warn",
+        `archived ${toNotify.length} unseen URLs without alerts (dump fuse)`
+      );
+      console.warn(
+        `[website] ${site.hostname}: archived ${toNotify.length} unseen URLs without alerts`
       );
     } else if (toNotify.length) {
       for (const url of toNotify) {

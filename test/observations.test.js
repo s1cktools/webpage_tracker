@@ -132,6 +132,24 @@ test("hub observations dedupe, dump-fuse, and ignore repeat Binance versions", a
     assert.equal(sourceFollowUp.inserted, 1);
     assert.equal(sourceFollowUp.emitted, 1);
 
+    const websiteDump = await applyObservations({
+      satellite_id: "vps-1",
+      items: [
+        {
+          kind: "website_page",
+          site_id: siteId,
+          playbook_key: "example",
+          source_key: "new-feed",
+          urls: Array.from({ length: 20 }, (_, index) => ({
+            url: `https://example.com/catalog-${index}`,
+            title: `Catalog ${index}`,
+          })),
+        },
+      ],
+    });
+    assert.equal(websiteDump.inserted, 20);
+    assert.equal(websiteDump.emitted, 0);
+
     const namespace = "activity-ui";
     const firstUi = await applyObservations({
       satellite_id: "vps-1",

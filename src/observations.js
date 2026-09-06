@@ -91,7 +91,16 @@ async function ingestWebsitePages(site, items, options = {}) {
   const isBaseline = options.isBaseline ?? !site.baselined;
   const inserted = addDiscoveredUrls(site.id, normalized.urls, isBaseline);
   const shouldNotify = options.notify ?? (!isBaseline && Boolean(site.baselined));
-  if (inserted.length && shouldNotify) {
+  const dumpThreshold = Number(options.dumpThreshold) || 0;
+  const dumpFused =
+    shouldNotify && dumpThreshold > 0 && inserted.length >= dumpThreshold;
+  if (dumpFused) {
+    addLog(
+      site.id,
+      "warn",
+      `archived ${inserted.length} unseen URLs without alerts (dump fuse)`
+    );
+  } else if (inserted.length && shouldNotify) {
     try {
       await notifyWebsitePages(
         site,
@@ -106,7 +115,7 @@ async function ingestWebsitePages(site, items, options = {}) {
   }
   return {
     inserted: inserted.length,
-    emitted: shouldNotify ? inserted.length : 0,
+    emitted: shouldNotify && !dumpFused ? inserted.length : 0,
     items: inserted,
     sources,
     titles,
@@ -283,7 +292,7 @@ async function applyObservation(item, context = {}) {
       const playbookKey = String(item.playbook_key || "").trim();
       const sourceKey = String(item.source_key || "").trim();
       if (!playbookKey || !sourceKey) {
-        return ingestWebsitePages(site, item.urls || []);
+        return ingestWebsitePages(site, item.urls || [], { dumpThreshold: 20 });
       }
       if (
         !/^[a-z0-9_-]{1,80}$/i.test(playbookKey) ||
@@ -303,6 +312,7 @@ async function applyObservation(item, context = {}) {
       const result = await ingestWebsitePages(site, item.urls || [], {
         isBaseline: firstSeen || !site.baselined,
         notify: !firstSeen && Boolean(site.baselined),
+        dumpThreshold: 20,
       });
       if (firstSeen) {
         seenSources.add(sourceKey);
