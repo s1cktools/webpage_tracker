@@ -187,6 +187,39 @@ function buildRobinhoodPageEvent(
   );
 }
 
+function buildWebsiteProfileChangeEvent(
+  profile,
+  changes,
+  detectedAt = new Date(),
+  reportUrl = null
+) {
+  return createEvent(
+    "website_profile_change",
+    displayData(
+      {
+        website_name: "Wizard Cards",
+        hostname: "wizardcards.com",
+        profile_name: profile.profileName,
+        username: profile.username,
+        url: profile.url,
+        avatar_url: profile.avatarUrl || null,
+        changes: changes.map((change) => ({
+          change_type: change.type,
+          key: change.key,
+          label: change.label,
+          old_value: change.oldValue,
+          new_value: change.newValue,
+        })),
+      },
+      `${profile.profileName} profile updated`,
+      `${changes.length} profile field${changes.length === 1 ? "" : "s"} changed`,
+      reportUrl,
+      changes.length
+    ),
+    detectedAt
+  );
+}
+
 function buildBinanceSquarePostEvent(target, post, detectedAt = new Date()) {
   const url = post.url || `https://www.binance.com/en/square/post/${encodeURIComponent(post.id)}`;
   const title = post.title || String(post.content || "").slice(0, 80) || "Binance Square post";
@@ -296,6 +329,7 @@ module.exports = {
   buildGithubEvent,
   buildPumpAppUpdateEvent,
   buildRobinhoodPageEvent,
+  buildWebsiteProfileChangeEvent,
   buildWebsitePageEvent,
   buildWebsiteSubdomainEvent,
   buildYouTubeVideoEvent,

@@ -215,6 +215,28 @@ db.exec(`
     first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS wizard_profile_state (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    url TEXT NOT NULL,
+    profile_name TEXT NOT NULL,
+    username TEXT NOT NULL,
+    avatar_url TEXT,
+    snapshot_json TEXT NOT NULL DEFAULT '{}',
+    baselined INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT,
+    last_error TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS wizard_profile_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    change_type TEXT NOT NULL CHECK(change_type IN ('added', 'changed', 'removed')),
+    field_key TEXT NOT NULL,
+    field_label TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS youtube_channels (
     channel_id TEXT PRIMARY KEY,
     handle TEXT,
@@ -308,6 +330,9 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS robinhood_pages_seen
     ON robinhood_pages(first_seen_at DESC);
+
+  CREATE INDEX IF NOT EXISTS wizard_profile_changes_seen
+    ON wizard_profile_changes(id DESC);
 
   CREATE INDEX IF NOT EXISTS youtube_videos_seen
     ON youtube_videos(first_seen_at DESC);
@@ -788,6 +813,48 @@ const statements = {
   countRobinhoodDiscoveries: db.prepare(`
     SELECT COUNT(*) AS count FROM robinhood_pages WHERE is_baseline = 0
   `),
+  ensureWizardProfileState: db.prepare(`
+    INSERT OR IGNORE INTO wizard_profile_state
+      (id, url, profile_name, username)
+    VALUES (1, ?, ?, ?)
+  `),
+  getWizardProfileState: db.prepare(`
+    SELECT * FROM wizard_profile_state WHERE id = 1
+  `),
+  saveWizardProfileState: db.prepare(`
+    UPDATE wizard_profile_state
+    SET url = ?,
+        profile_name = ?,
+        username = ?,
+        avatar_url = ?,
+        snapshot_json = ?,
+        baselined = 1,
+        last_checked_at = CURRENT_TIMESTAMP,
+        last_error = NULL
+    WHERE id = 1
+  `),
+  markWizardProfileError: db.prepare(`
+    UPDATE wizard_profile_state
+    SET last_checked_at = CURRENT_TIMESTAMP, last_error = ?
+    WHERE id = 1
+  `),
+  insertWizardProfileChange: db.prepare(`
+    INSERT INTO wizard_profile_changes
+      (change_type, field_key, field_label, old_value, new_value)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  recentWizardProfileChanges: db.prepare(`
+    SELECT * FROM wizard_profile_changes ORDER BY id DESC LIMIT ?
+  `),
+  countWizardProfileChanges: db.prepare(`
+    SELECT COUNT(*) AS count FROM wizard_profile_changes
+  `),
+  trimWizardProfileChanges: db.prepare(`
+    DELETE FROM wizard_profile_changes
+    WHERE id NOT IN (
+      SELECT id FROM wizard_profile_changes ORDER BY id DESC LIMIT 500
+    )
+  `),
   insertAlertReport: db.prepare(`
     INSERT INTO alert_reports (id, kind, title, item_count, payload_json)
     VALUES (?, ?, ?, ?, ?)
@@ -969,6 +1036,11 @@ const statements = {
 
 statements.ensurePumpState.run();
 statements.ensureRobinhoodState.run();
+statements.ensureWizardProfileState.run(
+  "https://wizardcards.com/member.php?action=viewpro&member=Mr.%20Wizard",
+  "Mr. Wizard",
+  "Mr. Wizard"
+);
 db.exec(`
   UPDATE binance_ui_observations
   SET notification_status = 'pending'
@@ -1294,6 +1366,33 @@ function addRobinhoodPages(pages, isBaseline = false) {
     throw error;
   }
   return inserted;
+}
+
+function saveWizardProfile(profile, snapshot, changes = []) {
+  db.exec("BEGIN");
+  try {
+    statements.saveWizardProfileState.run(
+      profile.url,
+      profile.profileName,
+      profile.username,
+      profile.avatarUrl || null,
+      JSON.stringify(snapshot)
+    );
+    for (const change of changes) {
+      statements.insertWizardProfileChange.run(
+        change.type,
+        change.key,
+        change.label,
+        change.oldValue ?? null,
+        change.newValue ?? null
+      );
+    }
+    statements.trimWizardProfileChanges.run();
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function syncYouTubeChannels(channels) {
@@ -1627,6 +1726,7 @@ module.exports = {
   addGithubLog,
   addBinanceChanges,
   addRobinhoodPages,
+  saveWizardProfile,
   applyBinanceObservation,
   applyPumpObservation,
   claimBinanceNotification,

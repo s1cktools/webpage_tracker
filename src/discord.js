@@ -9,6 +9,7 @@ const BINANCE_AMBER = 0xf0b90b;
 const BINANCE_RED = 0xef4444;
 const PUMP_GREEN = 0x86efac;
 const ROBINHOOD_GREEN = 0x00c805;
+const WIZARD_PURPLE = 0x7c3aed;
 const CT_BLUE = 0x38bdf8;
 const MAX_VISIBLE_URLS = 10;
 
@@ -232,6 +233,46 @@ function buildRobinhoodPayload(pages, scanDurationMs, now = new Date(), reportUr
   };
 }
 
+function buildWizardProfilePayload(
+  profile,
+  changes,
+  scanDurationMs,
+  now = new Date(),
+  reportUrl = null
+) {
+  const shown = changes.slice(0, 10);
+  const lines = shown.map((change) => {
+    const before = formatBinanceValue(change.oldValue || "—", 80);
+    const after = formatBinanceValue(change.newValue || "—", 80);
+    if (change.type === "added") return `+ **${change.label}:** ${after}`;
+    if (change.type === "removed") return `- **${change.label}:** ${before}`;
+    return `~ **${change.label}:** ${before} → ${after}`;
+  });
+  if (changes.length > shown.length) {
+    lines.push(`… ${changes.length - shown.length} more changes`);
+  }
+  if (reportUrl) lines.push(`[View full report →](${reportUrl})`);
+
+  return {
+    username: "the watcher",
+    allowed_mentions: { parse: [] },
+    embeds: [
+      {
+        color: WIZARD_PURPLE,
+        author: { name: "wizardcards.com" },
+        title: `${profile.profileName} profile updated`,
+        url: profile.url,
+        description: lines.join("\n"),
+        thumbnail: profile.avatarUrl ? { url: profile.avatarUrl } : undefined,
+        footer: {
+          text: `PROFILE CHANGE · ${changes.length} field${changes.length === 1 ? "" : "s"} · ${scanDurationMs}ms`,
+        },
+        timestamp: now.toISOString(),
+      },
+    ],
+  };
+}
+
 function buildPumpPayload(update, scanDurationMs, now = new Date()) {
   const groups = groupPumpChanges(update.changes);
   const added = groups.reduce((total, group) => total + group.added.length, 0);
@@ -272,6 +313,7 @@ module.exports = {
   buildPumpPayload,
   buildRobinhoodPayload,
   buildSubdomainPayload,
+  buildWizardProfilePayload,
   displayUrl,
   fallbackTitle,
   formatBinanceChanges,

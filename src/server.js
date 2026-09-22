@@ -62,6 +62,12 @@ const {
   syncWebsitePlaybooks,
 } = require("./website-scanner");
 const {
+  WIZARD_POLL_INTERVAL_MS,
+  isWizardEnabled,
+  scanWizardProfile,
+  startWizardScanner,
+} = require("./wizard-scanner");
+const {
   addYouTubeChannelFromInput,
   isYouTubeEnabled,
   listPublicYouTubeChannels,
@@ -388,6 +394,13 @@ if (process.env.DASHBOARD_PASSWORD) {
 app.get("/", (request, response) => {
   const webhook = getSetting("discord_webhook_url");
   const ctStatus = getCtStatus();
+  const wizardState = statements.getWizardProfileState.get();
+  let wizardFieldCount = 0;
+  try {
+    wizardFieldCount = Object.keys(JSON.parse(wizardState?.snapshot_json || "{}")).length;
+  } catch {
+    wizardFieldCount = 0;
+  }
   response.render("index", {
     sites: statements.listSites.all().map((site) => ({
       ...site,
@@ -411,6 +424,11 @@ app.get("/", (request, response) => {
     robinhoodPageCount: statements.countRobinhoodPages.get().count,
     robinhoodDiscoveryCount: statements.countRobinhoodDiscoveries.get().count,
     robinhoodEnabled: isRobinhoodEnabled(),
+    wizardState,
+    wizardFieldCount,
+    recentWizardChanges: statements.recentWizardProfileChanges.all(30),
+    wizardChangeCount: statements.countWizardProfileChanges.get().count,
+    wizardEnabled: isWizardEnabled(),
     youtubeChannels: statements.listYouTubeChannels.all(),
     recentYouTubeVideos: statements.recentYouTubeVideos.all(20),
     youtubeVideoCount: statements.countYouTubeVideos.get().count,
@@ -431,6 +449,7 @@ app.get("/", (request, response) => {
     binancePollSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
     pumpPollSeconds: PUMP_POLL_INTERVAL_MS / 1000,
     robinhoodPollSeconds: ROBINHOOD_POLL_INTERVAL_MS / 1000,
+    wizardPollSeconds: WIZARD_POLL_INTERVAL_MS / 1000,
     youtubePollSeconds: 15,
     message: request.query.message || "",
     error: request.query.error || "",
@@ -604,6 +623,20 @@ app.post("/robinhood/scan", (request, response) => {
   response.redirect("/?message=Robinhood page check started.");
 });
 
+app.post("/wizard/toggle", (request, response) => {
+  const enabled = !isWizardEnabled();
+  statements.setSetting.run("wizard_profile_enabled", enabled ? "1" : "0");
+  if (enabled) scanWizardProfile();
+  response.redirect(
+    `/?message=Wizard profile monitor ${enabled ? "resumed" : "paused"}.`
+  );
+});
+
+app.post("/wizard/scan", (request, response) => {
+  scanWizardProfile(true);
+  response.redirect("/?message=Wizard profile check started.");
+});
+
 app.post("/youtube/toggle", (request, response) => {
   const enabled = !isYouTubeEnabled();
   statements.setSetting.run("youtube_enabled", enabled ? "1" : "0");
@@ -693,6 +726,7 @@ httpServer.listen(port, "0.0.0.0", () => {
   startBinanceScanner();
   startPumpScanner();
   startRobinhoodScanner();
+  startWizardScanner();
   startYouTubeScanner();
   startBinanceSquareScanner();
 });

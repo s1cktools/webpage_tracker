@@ -401,6 +401,46 @@ button:hover { color: var(--red); }
 .robinhood-row b { color: #00c805; font-weight: 500; }
 .robinhood-row:hover b { color: var(--text); }
 
+.wizard-changes {
+  max-height: 485px;
+  overflow-y: auto;
+  border-top: 0;
+  border-radius: 0;
+}
+
+.wizard-header,
+.wizard-row {
+  display: grid;
+  grid-template-columns: minmax(130px, .8fr) 70px minmax(180px, 1.25fr) minmax(180px, 1.25fr) 145px;
+  gap: 16px;
+  align-items: center;
+}
+
+.wizard-header {
+  min-height: 35px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.wizard-row {
+  min-height: 45px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 10px;
+}
+
+.wizard-row:last-child { border-bottom: 0; }
+.wizard-row:hover { background: var(--surface); }
+.wizard-row > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wizard-row b { color: #a78bfa; font-weight: 500; }
+
 .pump-detail { width: min(960px, calc(100% - 56px)); }
 .detail-source {
   color: var(--muted);
@@ -603,7 +643,8 @@ button:hover { color: var(--red); }
 .github-header,
 .binance-header,
 .pump-header,
-.robinhood-header {
+.robinhood-header,
+.wizard-header {
   position: sticky;
   z-index: 1;
   top: 0;
@@ -802,6 +843,13 @@ button:hover { color: var(--red); }
     padding: 11px 12px;
   }
   .robinhood-row > time { display: none; }
+  .wizard-header { display: none; }
+  .wizard-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding: 11px 12px;
+  }
+  .wizard-row > span:not(.change-type), .wizard-row time { display: none; }
   .pump-detail { width: calc(100% - 32px); }
   .pump-change-group summary { align-items: flex-start; }
   .pump-group-counts { flex-wrap: wrap; justify-content: flex-end; }

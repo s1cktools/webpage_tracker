@@ -269,6 +269,60 @@
       <section class="command github-command">
         <div>
           <span class="kicker">WATCH</span>
+          <h1>wizardcards.profile</h1>
+        </div>
+        <div class="binance-controls">
+          <a class="detail-source" href="<%= wizardState.url %>" target="_blank" rel="noreferrer">Mr. Wizard ↗</a>
+          <form method="post" action="/wizard/scan">
+            <button>scan</button>
+          </form>
+          <form method="post" action="/wizard/toggle">
+            <button><%= wizardEnabled ? "pause" : "resume" %></button>
+          </form>
+        </div>
+      </section>
+
+      <section class="summary github-summary">
+        <span><b><%= wizardFieldCount %></b> fields</span>
+        <span><b><%= wizardState.baselined ? "yes" : "no" %></b> baselined</span>
+        <span><b><%= wizardChangeCount %></b> changes</span>
+        <span><b><%= wizardPollSeconds %>s</b> poll</span>
+        <span class="state <%= wizardEnabled ? '' : 'idle' %>"><%= wizardEnabled ? "running" : "paused" %></span>
+      </section>
+
+      <% if (wizardState.last_error) { %>
+        <section class="binance-errors">
+          <span title="<%= wizardState.last_error %>"><b>Mr. Wizard</b> · <%= wizardState.last_error %></span>
+        </section>
+      <% } %>
+
+      <section class="block wizard-changes">
+        <header class="wizard-header">
+          <span>field</span>
+          <span>change</span>
+          <span>before</span>
+          <span>after</span>
+          <span>detected</span>
+        </header>
+
+        <% if (!recentWizardChanges.length) { %>
+          <div class="empty">baseline only · no profile changes detected</div>
+        <% } %>
+
+        <% recentWizardChanges.forEach((change) => { %>
+          <article class="wizard-row">
+            <b title="<%= change.field_key %>"><%= change.field_label %></b>
+            <span class="change-type <%= change.change_type %>"><%= change.change_type %></span>
+            <span title="<%= change.old_value || '' %>"><%= change.old_value || "—" %></span>
+            <span title="<%= change.new_value || '' %>"><%= change.new_value || "—" %></span>
+            <time datetime="<%= change.detected_at %>"><%= change.detected_at %></time>
+          </article>
+        <% }) %>
+      </section>
+
+      <section class="command github-command">
+        <div>
+          <span class="kicker">WATCH</span>
           <h1>youtube</h1>
         </div>
         <div class="binance-controls">

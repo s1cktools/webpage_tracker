@@ -6,6 +6,7 @@ const {
   buildGithubEvent,
   buildPumpAppUpdateEvent,
   buildRobinhoodPageEvent,
+  buildWebsiteProfileChangeEvent,
   buildWebsitePageEvent,
   buildWebsiteSubdomainEvent,
   buildYouTubeVideoEvent,
@@ -167,6 +168,40 @@ test("builds a Robinhood page event", () => {
   assert.equal(event.data.path, "/us/en/tboy");
   assert.equal(event.data.discovery_source, "brand_manifest");
   assert.equal(event.data.item_count, 3);
+});
+
+test("builds a Wizard profile change event", () => {
+  const event = buildWebsiteProfileChangeEvent(
+    {
+      profileName: "Mr. Wizard",
+      username: "Mr. Wizard",
+      url: "https://wizardcards.com/member.php?action=viewpro&member=Mr.%20Wizard",
+      avatarUrl: "https://img.test/wizard.jpg",
+    },
+    [
+      {
+        type: "changed",
+        key: "city",
+        label: "City",
+        oldValue: "Boston",
+        newValue: "Salem",
+      },
+    ],
+    detectedAt,
+    "https://tracker.example/reports/profile"
+  );
+
+  assertEnvelope(event, "website_profile_change");
+  assert.equal(event.data.profile_name, "Mr. Wizard");
+  assert.equal(event.data.avatar_url, "https://img.test/wizard.jpg");
+  assert.equal(event.data.report_url, "https://tracker.example/reports/profile");
+  assert.deepEqual(event.data.changes[0], {
+    change_type: "changed",
+    key: "city",
+    label: "City",
+    old_value: "Boston",
+    new_value: "Salem",
+  });
 });
 
 test("builds a bounded snake_case Pump app update event", () => {

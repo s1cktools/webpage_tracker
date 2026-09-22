@@ -79,6 +79,21 @@ function saveRobinhoodReport(pages) {
   );
 }
 
+function saveWizardProfileReport(profile, changes) {
+  return saveReport(
+    "profile",
+    `${profile.profileName} · profile changes`,
+    `${changes.length} profile field${changes.length === 1 ? "" : "s"} changed on wizardcards.com`,
+    changes.map((change) => ({
+      type: change.type,
+      label: change.label,
+      oldValue: change.oldValue,
+      newValue: change.newValue,
+    })),
+    profile.url
+  );
+}
+
 function saveBinanceReport(event) {
   return saveReport(
     "binance",
@@ -100,5 +115,6 @@ module.exports = {
   saveGithubReport,
   saveRobinhoodReport,
   saveSubdomainsReport,
+  saveWizardProfileReport,
   saveWebsitePagesReport,
 };

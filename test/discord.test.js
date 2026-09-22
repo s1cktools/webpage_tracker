@@ -5,6 +5,7 @@ const {
   buildDiscordPayload,
   buildGitHubPayload,
   buildSubdomainPayload,
+  buildWizardProfilePayload,
 } = require("../src/discord");
 
 const site = {
@@ -141,4 +142,28 @@ test("links truncated Binance changes to their exact report", () => {
   assert.match(payload.embeds[0].description, /more changes/);
   assert.match(payload.embeds[0].description, /View all 30 changes/);
   assert.match(payload.embeds[0].description, /binance-report/);
+});
+
+test("builds a Wizard profile diff with avatar and report link", () => {
+  const payload = buildWizardProfilePayload(
+    {
+      profileName: "Mr. Wizard",
+      url: "https://wizardcards.com/member.php?action=viewpro&member=Mr.%20Wizard",
+      avatarUrl: "https://img.test/wizard.jpg",
+    },
+    [{
+      type: "changed",
+      label: "City",
+      oldValue: "Boston",
+      newValue: "Salem",
+    }],
+    23,
+    now,
+    "https://tracker.example/reports/wizard"
+  );
+
+  assert.equal(payload.embeds[0].title, "Mr. Wizard profile updated");
+  assert.equal(payload.embeds[0].thumbnail.url, "https://img.test/wizard.jpg");
+  assert.match(payload.embeds[0].description, /Boston → Salem/);
+  assert.match(payload.embeds[0].description, /reports\/wizard/);
 });
